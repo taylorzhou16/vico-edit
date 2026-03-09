@@ -1,0 +1,23 @@
+# API Keys
+*.key
+.env
+.env.*
+
+# Generated files
+generated/
+intermediate/
+output/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
