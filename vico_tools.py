@@ -18,7 +18,7 @@ import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 # 设置日志
 logging.basicConfig(
@@ -149,7 +149,21 @@ class ViduClient:
 
             base64_data = base64.b64encode(image_data).decode('utf-8')
             ext = os.path.splitext(image_path)[1].lower()
-            mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}
+            # HEIC/HEIF 需要先转换
+            if ext in ['.heic', '.heif']:
+                import subprocess
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                    tmp_path = tmp.name
+                subprocess.run(['ffmpeg', '-i', image_path, '-q:v', '2', tmp_path, '-y'],
+                              capture_output=True, check=True)
+                with open(tmp_path, 'rb') as f:
+                    image_data = f.read()
+                os.unlink(tmp_path)
+                ext = '.jpg'
+
+            mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                       '.webp': 'image/webp', '.heic': 'image/jpeg', '.heif': 'image/jpeg'}
             mime_type = mime_map.get(ext, 'image/jpeg')
             image_input = f"data:{mime_type};base64,{base64_data}"
 
@@ -597,6 +611,172 @@ class ImageClient:
         except Exception as e:
             logger.error(f"❌ 图片生成失败: {e}")
             return {"success": False, "error": str(e)}
+
+
+# ============== 人物角色管理（可选工具）==============
+
+class PersonaManager:
+    """
+    人物角色管理器（可选工具）
+
+    用于管理项目中的人物参考图。
+    只有当视频涉及人物时才使用，纯风景/物品视频不需要。
+
+    使用方式：
+        manager = PersonaManager(project_dir)
+        manager.register("小美", "female", "path/to/reference.jpg", "长发、圆脸、戴眼镜")
+        ref_path = manager.get_reference("小美")
+    """
+
+    def __init__(self, project_dir: str = None):
+        self.project_dir = Path(project_dir) if project_dir else None
+        self.personas = {}  # {persona_id: {name, gender, features, reference_image}}
+        self._persona_file = None
+
+        if self.project_dir:
+            self._persona_file = self.project_dir / "personas.json"
+            self._load()
+
+    def _load(self):
+        """从文件加载人物数据"""
+        if self._persona_file and self._persona_file.exists():
+            try:
+                with open(self._persona_file, "r", encoding="utf-8") as f:
+                    self.personas = json.load(f)
+            except Exception as e:
+                logger.warning(f"⚠️ 加载 personas.json 失败: {e}")
+                self.personas = {}
+
+    def _save(self):
+        """保存人物数据到文件"""
+        if self._persona_file:
+            self._persona_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._persona_file, "w", encoding="utf-8") as f:
+                json.dump(self.personas, f, indent=2, ensure_ascii=False)
+
+    def register(
+        self,
+        name: str,
+        gender: str,
+        reference_image: str,
+        features: str = ""
+    ) -> str:
+        """
+        注册人物角色
+
+        Args:
+            name: 人物名称
+            gender: 性别 (male/female)
+            reference_image: 参考图路径
+            features: 外貌特征描述
+
+        Returns:
+            persona_id
+        """
+        # 生成唯一ID
+        persona_id = name.lower().replace(" ", "_")
+        counter = 1
+        original_id = persona_id
+        while persona_id in self.personas:
+            persona_id = f"{original_id}_{counter}"
+            counter += 1
+
+        self.personas[persona_id] = {
+            "name": name,
+            "gender": gender,
+            "reference_image": reference_image,
+            "features": features
+        }
+
+        self._save()
+        logger.info(f"✅ 已注册人物: {name} (ID: {persona_id})")
+
+        return persona_id
+
+    def get_reference(self, persona_id: str) -> Optional[str]:
+        """获取人物参考图路径"""
+        persona = self.personas.get(persona_id)
+        if persona:
+            return persona.get("reference_image")
+        return None
+
+    def get_features(self, persona_id: str) -> str:
+        """
+        获取人物特征描述（用于 prompt）
+
+        Returns:
+            特征描述字符串，如 "young woman with long hair, round face, glasses"
+        """
+        persona = self.personas.get(persona_id)
+        if not persona:
+            return ""
+
+        parts = []
+
+        # 性别
+        gender = persona.get("gender", "")
+        if gender == "female":
+            parts.append("woman")
+        elif gender == "male":
+            parts.append("man")
+
+        # 特征
+        features = persona.get("features", "")
+        if features:
+            parts.append(features)
+
+        # 名字作为参考标识
+        name = persona.get("name", "")
+        if name:
+            return f"{', '.join(parts)} (reference: {name})"
+
+        return ", ".join(parts)
+
+    def get_persona_prompt(self, persona_id: str) -> str:
+        """
+        获取用于 Vidu/Gemini 的人物 prompt
+
+        格式: "Reference for {GENDER} ({name}): MUST preserve exact appearance - {features}"
+        """
+        persona = self.personas.get(persona_id)
+        if not persona:
+            return ""
+
+        gender = persona.get("gender", "person")
+        name = persona.get("name", "")
+        features = persona.get("features", "")
+
+        gender_upper = "WOMAN" if gender == "female" else "MAN" if gender == "male" else "PERSON"
+
+        prompt = f"Reference for {gender_upper} ({name}): MUST preserve exact appearance"
+        if features:
+            prompt += f" - {features}"
+
+        return prompt
+
+    def list_personas(self) -> List[dict]:
+        """列出所有人物"""
+        return [
+            {"id": pid, **pdata}
+            for pid, pdata in self.personas.items()
+        ]
+
+    def has_personas(self) -> bool:
+        """是否有人物注册"""
+        return len(self.personas) > 0
+
+    def remove(self, persona_id: str) -> bool:
+        """删除人物"""
+        if persona_id in self.personas:
+            del self.personas[persona_id]
+            self._save()
+            return True
+        return False
+
+    def clear(self):
+        """清空所有人物"""
+        self.personas = {}
+        self._save()
 
 
 # ============== 命令行入口 ==============

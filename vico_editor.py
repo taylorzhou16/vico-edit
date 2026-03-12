@@ -108,6 +108,138 @@ async def get_video_duration(video_path: str) -> float:
     return 0.0
 
 
+async def get_video_specs(video_path: str) -> Dict[str, Any]:
+    """获取视频详细参数"""
+    info = await get_video_info(video_path)
+    if not info:
+        return {"path": video_path, "error": "无法获取视频信息"}
+
+    specs = {"path": video_path}
+
+    # 从 streams 中获取视频参数
+    for stream in info.get("streams", []):
+        if stream.get("codec_type") == "video":
+            specs["width"] = stream.get("width", 0)
+            specs["height"] = stream.get("height", 0)
+            specs["codec"] = stream.get("codec_name", "unknown")
+            specs["pix_fmt"] = stream.get("pix_fmt", "unknown")
+            # 帧率可能是 "24/1" 或 "23.976" 格式
+            fps_str = stream.get("r_frame_rate", "0/1")
+            if "/" in fps_str:
+                num, den = fps_str.split("/")
+                specs["fps"] = round(int(num) / int(den), 3) if int(den) != 0 else 0
+            else:
+                specs["fps"] = float(fps_str)
+            break
+
+    # 时长
+    specs["duration"] = float(info.get("format", {}).get("duration", 0))
+
+    return specs
+
+
+async def validate_videos(video_paths: List[str]) -> Dict[str, Any]:
+    """
+    校验所有视频参数是否一致
+
+    Returns:
+        {
+            "consistent": bool,
+            "issues": List[str],  # 问题描述
+            "specs": List[dict],  # 每个视频的参数
+        }
+    """
+    specs_list = []
+    for path in video_paths:
+        specs = await get_video_specs(path)
+        specs_list.append(specs)
+
+    # 提取关键参数
+    resolutions = set()
+    codecs = set()
+    fps_values = set()
+    issues = []
+
+    for specs in specs_list:
+        if "error" in specs:
+            issues.append(f"视频参数错误: {specs['path']} - {specs['error']}")
+            continue
+
+        resolutions.add((specs.get("width", 0), specs.get("height", 0)))
+        codecs.add(specs.get("codec", "unknown"))
+        fps_values.add(specs.get("fps", 0))
+
+    # 检查一致性
+    if len(resolutions) > 1:
+        res_str = ", ".join([f"{w}x{h}" for w, h in resolutions])
+        issues.append(f"分辨率不一致: {res_str}")
+
+    if len(codecs) > 1:
+        issues.append(f"编码不一致: {', '.join(codecs)}")
+
+    if len(fps_values) > 1:
+        # 允许轻微的帧率差异（如 23.976 vs 24）
+        fps_range = max(fps_values) - min(fps_values)
+        if fps_range > 1:
+            issues.append(f"帧率差异较大: {', '.join(map(str, fps_values))}")
+
+    return {
+        "consistent": len(issues) == 0,
+        "issues": issues,
+        "specs": specs_list
+    }
+
+
+async def normalize_videos(
+    video_paths: List[str],
+    output_dir: str,
+    aspect: str = "9:16"
+) -> List[str]:
+    """
+    归一化所有视频到统一参数
+
+    统一参数：
+    - 分辨率：9:16 → 1080x1920, 16:9 → 1920x1080, 1:1 → 1080x1080
+    - 编码：H.264
+    - 帧率：24fps
+    - 像素格式：yuv420p
+
+    Returns:
+        归一化后的视频路径列表
+    """
+    w, h = get_resolution_for_aspect(aspect)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    normalized_paths = []
+
+    for i, video_path in enumerate(video_paths):
+        output_file = output_path / f"normalized_{i:03d}.mp4"
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-r", "24",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
+            "-ar", "44100",
+            str(output_file)
+        ]
+
+        success, msg = await run_ffmpeg(cmd)
+
+        if success:
+            normalized_paths.append(str(output_file))
+            logger.info(f"✅ 视频归一化完成: {output_file}")
+        else:
+            logger.warning(f"⚠️ 视频归一化失败，使用原文件: {video_path}")
+            normalized_paths.append(video_path)
+
+    return normalized_paths
+
+
 # ============== 拼接视频 ==============
 
 async def concat_videos(
@@ -597,11 +729,36 @@ async def image_to_video(
 
 async def cmd_concat(args):
     """拼接命令"""
+    inputs = args.inputs
+    output_dir = Path(args.output).parent
+
+    # 先校验视频参数
+    logger.info("🔍 校验视频参数...")
+    validation = await validate_videos(inputs)
+
+    if not validation["consistent"]:
+        logger.warning(f"⚠️ 视频参数不一致: {validation['issues']}")
+        logger.info("🔧 自动归一化视频...")
+
+        # 创建临时目录存放归一化后的视频
+        normalize_dir = output_dir / "normalized_temp"
+        inputs = await normalize_videos(inputs, str(normalize_dir), args.aspect)
+
+        # 清理临时文件标记
+        args._normalized_dir = normalize_dir
+
+    # 然后拼接
     result = await concat_videos(
-        inputs=args.inputs,
+        inputs=inputs,
         output=args.output,
         aspect=args.aspect
     )
+
+    # 清理临时归一化文件
+    if hasattr(args, '_normalized_dir') and args._normalized_dir.exists():
+        import shutil
+        shutil.rmtree(args._normalized_dir)
+
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if result.get("success") else 1
 

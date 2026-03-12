@@ -90,11 +90,41 @@ python ~/.claude/skills/vico-edit/vico_tools.py check
 [同样询问]
 ```
 
+### 人物识别（条件性）
+
+**触发条件**：用户明确提供了**人物肖像图**作为参考素材。
+
+**判断标准**：
+- 肖像图：图片主体是人物面部/上半身特写，用于保持人物一致性
+- 非肖像图：风景、物品、街景（即使背景有路人）
+
+**仅当素材是肖像图时执行：**
+
+1. 使用 Read 工具查看图片**内容**（不看文件名）
+2. 识别：性别、外貌特征
+3. 询问用户确认人物身份（名字、在视频中的角色）
+4. 使用 PersonaManager 记录：
+   ```python
+   from vico_tools import PersonaManager
+   manager = PersonaManager(project_dir)
+   manager.register("小美", "female", "path/to/ref.jpg", "长发、圆脸、戴眼镜")
+   ```
+
+**不触发的情况：**
+- 风景照中的路人 → 不识别
+- 街景中的人群 → 不识别
+- 用户没有提供肖像参考图 → 跳过此步骤
+
+**如何判断是否是肖像图？**
+
+询问用户："这些图片是人物参考图吗？我需要用它们来保持人物一致性吗？"
+
 ### 产出文件
 
 创建项目目录 `~/vico-projects/{project_name}_{timestamp}/`，产出：
 - `state.json` - 项目状态
 - `analysis/analysis.json` - 素材分析结果
+- `personas.json` - 人物角色数据（仅当有人物时）
 
 ---
 
@@ -140,6 +170,31 @@ python ~/.claude/skills/vico-edit/vico_tools.py check
 2. **节奏变化**：避免所有镜头时长相同
 3. **景别变化**：连续镜头应有景别差异
 4. **转场选择**：根据情绪选择合适转场
+
+### 人物参考图策略（条件性）
+
+**仅当已注册人物参考图时考虑：**
+
+1. **单人镜头**：直接使用该人物的参考图做 img2video
+   ```bash
+   python vico_tools.py video --image <参考图> --prompt "Camera slowly pushes in..."
+   ```
+
+2. **双人镜头**：
+   - 先用 Gemini 多参考图生成合成图片
+   - 再用 image2video 生成视频
+   - **注意**：参考图顺序很重要，重要人物放后面（Gemini对最后输入的参考图给更多权重）
+
+   Prompt 示例：
+   ```
+   Reference for WOMAN (小美): MUST preserve exact appearance - long hair, round face, glasses
+   Reference for MAN (小明): MUST preserve exact appearance - short hair, beard
+   A couple drinking coffee together at a cozy cafe, warm lighting
+   ```
+
+3. **无人镜头**（风景、物品）：直接 text2video
+
+**如果没有注册人物参考图，跳过此步骤。**
 
 ### 分镜 JSON 格式
 
@@ -217,9 +272,29 @@ export YUNWU_API_KEY="user_provided_key"
 
 ## Phase 5: 剪辑输出
 
+### 视频参数校验（必须）
+
+拼接前必须执行：
+
+1. **检查所有视频的分辨率、编码、帧率**
+   ```bash
+   # 校验已自动集成到 concat 命令中
+   python vico_editor.py concat --inputs video1.mp4 video2.mp4 --output final.mp4
+   ```
+
+2. **如果参数不一致，自动归一化**
+   - 归一化参数：1080x1920 (9:16) / H.264 / 24fps / yuv420p
+   - 临时归一化文件存放在 `output/normalized_temp/` 目录
+   - 拼接完成后自动清理
+
+3. **常见分辨率问题**
+   - text2video 返回：720x1280
+   - image2video 返回：716x1284（可能不一致）
+   - **必须在拼接前统一分辨率**
+
 使用 FFmpeg 工具合成最终视频：
 
-1. **拼接** → 按分镜顺序连接视频
+1. **拼接** → 按分镜顺序连接视频（自动校验+归一化）
 2. **转场** → 添加镜头间转场效果
 3. **调色** → 应用整体调色风格
 4. **配乐** → 混合背景音乐
@@ -312,3 +387,36 @@ python ~/.claude/skills/vico-edit/vico_editor.py color --video <视频> --preset
 - FFmpeg 6.0+
 - Python 3.9+
 - httpx
+
+---
+
+## 关键经验总结
+
+### Gemini 多参考图注意事项
+
+1. **参考图顺序很重要**：重要人物放后面，Gemini 对最后输入的参考图给更多权重
+2. **Prompt 要明确**：使用 `Reference for WOMAN (name): MUST preserve exact appearance`
+3. **单人镜头用单参考图**，双人镜头先生成合成图片再转视频
+
+### 视频生成参数
+
+- text2video 返回：720x1280
+- image2video 返回：716x1284（可能不一致）
+- **必须在拼接前统一分辨率**（已自动处理）
+
+### 人物识别流程
+
+1. 读取图片**内容**，不看文件名
+2. 识别：人物数量、性别、外貌特征
+3. 确认主角：谁会跨场景出现
+4. 记录到 personas.json（仅当有人物时）
+
+### 功能触发条件
+
+| 功能 | 适用场景 | 触发条件 |
+|------|---------|---------|
+| 视频参数校验 | 所有视频 | 拼接前自动执行 |
+| PersonaManager | 人物视频 | 素材中有肖像图时 / 分镜有人物场景时 |
+| 人物识别流程 | 人物视频 | 检测到人物参考图时 |
+
+**风景/物品/动物视频**：只使用视频校验功能，完全不涉及人物管理模块。
