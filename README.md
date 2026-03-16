@@ -23,8 +23,10 @@
 
 - **素材分析**：自动识别图片/视频内容、场景、情感
 - **创意生成**：交互式问题卡片，定制视频创意方案
-- **分镜设计**：生成分镜脚本和 Vidu Prompt
-- **AI 视频生成**：Vidu Q3 Pro 图生视频/文生视频
+- **分镜设计**：生成分镜脚本和视频生成 Prompt
+- **AI 视频生成**：
+  - **Kling v3**：3-15秒、音画同出、多镜头、主体控制
+  - **Vidu Q3 Pro**：图生视频/文生视频（5-10秒）
 - **AI 音乐生成**：Suno V4.5 背景音乐
 - **TTS 语音合成**：火山引擎 TTS
 - **AI 图片生成**：Gemini 图片生成
@@ -83,8 +85,13 @@ cd ~/.claude/skills/vico-edit && pip install -r requirements.txt
 ### vico_tools.py
 
 ```bash
-# 视频生成
+# 视频生成（Vidu 后端，默认）
 python vico_tools.py video --image <图片> --prompt "<描述>" --duration 5 --output video.mp4
+
+# 视频生成（Kling 后端）
+python vico_tools.py video --prompt "<描述>" --backend kling --duration 5 --output video.mp4
+python vico_tools.py video --image <图片> --prompt "<描述>" --backend kling --output video.mp4
+python vico_tools.py video --prompt "<描述>" --backend kling --mode pro --duration 10  # 高质量模式
 
 # 音乐生成
 python vico_tools.py music --prompt "<描述>" --style "Lo-fi" --output music.mp3
@@ -95,6 +102,13 @@ python vico_tools.py tts --text "<文本>" --voice female_narrator --output audi
 # 图片生成
 python vico_tools.py image --prompt "<描述>" --style cinematic --output image.png
 ```
+
+### 视频生成后端对比
+
+| 后端 | 模型 | 时长 | 特点 |
+|------|------|------|------|
+| Vidu | viduq3-pro | 5-10s | 稳定、快速 |
+| Kling | kling-v3 | 3-15s | 音画同出、多镜头、主体控制 |
 
 ### vico_editor.py
 
@@ -123,6 +137,10 @@ python vico_editor.py speed --video video.mp4 --rate 1.5 --output out.mp4
 ```bash
 # Yunwu API - 用于 Vidu 视频生成 + Gemini 图片生成
 export YUNWU_API_KEY="your-api-key"
+
+# Kling API - 用于 Kling 视频生成
+export KLING_ACCESS_KEY="your-access-key"
+export KLING_SECRET_KEY="your-secret-key"
 
 # Suno 音乐生成
 export SUNO_API_KEY="your-api-key"
@@ -162,6 +180,31 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 - httpx（HTTP 客户端）
 
 ## 更新日志
+
+### v1.3.0 (2026-03-16)
+🎬 **Kling 视频生成 API 集成**
+
+#### 新功能
+- ✨ **Kling API 支持**
+  - 新增 KlingClient 类，支持 Kling v3 模型
+  - JWT Token 认证方式（iss, iat, exp, nbf）
+  - 文生视频 (text2video) 和图生视频 (image2video)
+  - 支持 3-15 秒时长范围
+  - 支持 std/pro 两种生成模式
+  - 支持音画同出 (sound: on/off)
+
+- ✨ **多镜头模式**
+  - 支持一次生成包含多个镜头的视频
+  - intelligence 模式（AI 自动分镜）
+  - customize 模式（自定义分镜）
+
+#### CLI 更新
+- 🔧 添加 `--backend` 参数选择视频生成后端（vidu/kling）
+- 🔧 添加 `--mode` 参数选择生成模式（std/pro）
+
+#### 文档更新
+- 📝 SKILL.md 添加 Kling 使用说明和多镜头分镜设计文档
+- 📝 README 更新功能列表、工具调用示例、环境变量配置
 
 ### v1.2.0 (2026-03-16)
 🎯 **分镜流程规范化 & 使用体验优化**
