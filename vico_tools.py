@@ -339,20 +339,16 @@ class ViduClient:
 
 class KlingClient:
     """
-    Kling 视频生成客户端 (kling-v3-omni)
+    Kling 视频生成客户端 (kling-v3)
 
-    功能特点：
-    - 文生视频（3-15秒）
-    - 图生视频
-    - 多镜头视频（multi_shot）
-    - 音画同出（sound: on/off）
+    使用 /v1/videos/text2video 和 /v1/videos/image2video 端点。
+    支持文生视频、图生视频（首帧/首尾帧）、多镜头、音画同出。
     """
 
     TEXT2VIDEO_PATH = "/v1/videos/text2video"
     IMAGE2VIDEO_PATH = "/v1/videos/image2video"
-    QUERY_PATH = "/v1/videos/text2video/{task_id}"
-
-    DEFAULT_MODEL = "kling-v3-omni"
+    TEXT2VIDEO_QUERY_PATH = "/v1/videos/text2video/{task_id}"
+    IMAGE2VIDEO_QUERY_PATH = "/v1/videos/image2video/{task_id}"
 
     def __init__(self):
         import httpx
@@ -478,7 +474,10 @@ class KlingClient:
         mode: str = "std",
         sound: str = "on",
         tail_image_path: str = None,
-        output: str = None
+        output: str = None,
+        multi_shot: bool = False,
+        shot_type: str = None,
+        multi_prompt: List[Dict] = None
     ) -> Dict[str, Any]:
         """
         图生视频
@@ -491,6 +490,9 @@ class KlingClient:
             sound: on 或 off
             tail_image_path: 尾帧图片路径（用于首尾帧控制）
             output: 输出文件路径
+            multi_shot: 是否多镜头
+            shot_type: 多镜头类型 (intelligence/customize)
+            multi_prompt: 多镜头配置列表
         """
         # 准备图片
         if image_path.startswith(('http://', 'https://')):
@@ -499,13 +501,10 @@ class KlingClient:
             if not os.path.exists(image_path):
                 return {"success": False, "error": f"图片不存在: {image_path}"}
 
-            # Kling API 需要上传图片获取 URL
-            # 这里简化处理，使用 base64 data URL
             with open(image_path, 'rb') as f:
                 image_data = f.read()
 
             ext = os.path.splitext(image_path)[1].lower()
-            # HEIC/HEIF 需要先转换
             if ext in ['.heic', '.heif']:
                 import subprocess
                 import tempfile
@@ -516,12 +515,8 @@ class KlingClient:
                 with open(tmp_path, 'rb') as f:
                     image_data = f.read()
                 os.unlink(tmp_path)
-                ext = '.jpg'
 
-            mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-                       '.webp': 'image/webp', '.heic': 'image/jpeg', '.heif': 'image/jpeg'}
-            mime_type = mime_map.get(ext, 'image/jpeg')
-            image_url = f"data:{mime_type};base64,{base64.b64encode(image_data).decode('utf-8')}"
+            image_url = base64.b64encode(image_data).decode('utf-8')
 
         payload = {
             "model_name": Config.KLING_MODEL,
@@ -532,6 +527,14 @@ class KlingClient:
             "mode": mode,
             "sound": sound
         }
+
+        # 处理多镜头参数
+        if multi_shot:
+            payload["multi_shot"] = True
+            if shot_type:
+                payload["shot_type"] = shot_type
+            if multi_prompt:
+                payload["multi_prompt"] = multi_prompt
 
         # 处理尾帧图片（首尾帧控制）
         if tail_image_path:
@@ -544,11 +547,7 @@ class KlingClient:
                 with open(tail_image_path, 'rb') as f:
                     tail_image_data = f.read()
 
-                ext = os.path.splitext(tail_image_path)[1].lower()
-                mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-                           '.webp': 'image/webp', '.heic': 'image/jpeg', '.heif': 'image/jpeg'}
-                mime_type = mime_map.get(ext, 'image/jpeg')
-                tail_image_url = f"data:{mime_type};base64,{base64.b64encode(tail_image_data).decode('utf-8')}"
+                tail_image_url = base64.b64encode(tail_image_data).decode('utf-8')
 
             payload["image_tail"] = tail_image_url
             logger.info(f"📤 创建 Kling 图生视频任务（含尾帧）: {prompt[:50]}...")
@@ -576,7 +575,7 @@ class KlingClient:
 
             logger.info(f"✅ 任务已创建: {task_id}")
 
-            video_url = await self._wait_for_completion(task_id)
+            video_url = await self._wait_for_completion(task_id, query_path=self.IMAGE2VIDEO_QUERY_PATH)
 
             if video_url and output:
                 await self._download_file(video_url, output)
@@ -593,9 +592,11 @@ class KlingClient:
             logger.error(f"❌ Kling 图生视频失败: {error_msg}")
             return {"success": False, "error": error_msg}
 
-    async def _wait_for_completion(self, task_id: str, max_wait: int = 600) -> Optional[str]:
+    async def _wait_for_completion(self, task_id: str, query_path: str = None, max_wait: int = 600) -> Optional[str]:
         """等待任务完成"""
         import time
+        if query_path is None:
+            query_path = self.TEXT2VIDEO_QUERY_PATH
         start_time = time.monotonic()
 
         logger.info(f"⏳ 等待 Kling 任务完成: {task_id}")
@@ -609,7 +610,7 @@ class KlingClient:
             try:
                 token = self._get_token()
                 response = await self.client.get(
-                    f"{Config.KLING_BASE_URL}{self.QUERY_PATH.format(task_id=task_id)}",
+                    f"{Config.KLING_BASE_URL}{query_path.format(task_id=task_id)}",
                     headers={"Authorization": f"Bearer {token}"}
                 )
                 response.raise_for_status()
@@ -658,6 +659,223 @@ class KlingClient:
 
     async def close(self):
         await self.client.aclose()
+
+
+class KlingOmniClient:
+    """
+    Kling Omni-Video 视频生成客户端 (kling-v3-omni)
+    使用 /v1/videos/omni-video 端点，支持 image_list 和 multi_shot
+
+    功能特点：
+    - 文生视频（3-15秒）
+    - 图生视频（支持 image_list 多参考图）
+    - 多镜头视频（multi_shot）
+    - 音画同出（sound: on/off）
+    """
+
+    OMNI_VIDEO_PATH = "/v1/videos/omni-video"
+    QUERY_PATH = "/v1/videos/omni-video/{task_id}"
+
+    DEFAULT_MODEL = "kling-v3-omni"
+
+    def __init__(self):
+        import httpx
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0, connect=10.0),
+            headers={
+                "Content-Type": "application/json",
+            }
+        )
+        self._token = None
+        self._token_expire = 0
+
+    def _generate_token(self) -> str:
+        """生成 JWT 认证 token"""
+        import jwt
+        import time
+
+        now = int(time.time())
+        payload = {
+            "iss": Config.KLING_ACCESS_KEY,
+            "iat": now,
+            "exp": now + 3600,
+            "nbf": now - 5
+        }
+        return jwt.encode(payload, Config.KLING_SECRET_KEY, algorithm="HS256")
+
+    def _get_token(self) -> str:
+        """获取有效的 token（带缓存）"""
+        import time
+        if not self._token or time.time() > self._token_expire - 60:
+            self._token = self._generate_token()
+            self._token_expire = time.time() + 3600
+        return self._token
+
+    def _file_to_base64(self, file_path: str) -> str:
+        """将文件转为纯 base64 字符串（不带 data URI 前缀）"""
+        with open(file_path, 'rb') as f:
+            data = f.read()
+        return base64.b64encode(data).decode('utf-8')
+
+    async def create_omni_video(
+        self,
+        prompt: str,
+        duration: int = 5,
+        mode: str = "std",
+        aspect_ratio: str = "16:9",
+        sound: str = "on",
+        image_list: List[str] = None,
+        multi_shot: bool = False,
+        shot_type: str = None,
+        multi_prompt: List[Dict] = None,
+        output: str = None
+    ) -> Dict[str, Any]:
+        """
+        Omni-Video 生成（支持 image_list + multi_shot）
+
+        Args:
+            prompt: 视频描述，可使用 <<<image_1>>> 引用图片
+            duration: 时长（3-15秒）
+            mode: std 或 pro
+            aspect_ratio: 宽高比 (16:9, 9:16, 1:1)
+            sound: on 或 off
+            image_list: 图片路径列表，用于角色一致性
+            multi_shot: 是否多镜头
+            shot_type: intelligence（AI自动分镜）或 customize（自定义分镜）
+            multi_prompt: 自定义分镜的镜头列表，格式 [{"index": 1, "prompt": "...", "duration": "3"}, ...]
+            output: 输出文件路径
+        """
+        payload = {
+            "model_name": self.DEFAULT_MODEL,
+            "prompt": prompt,
+            "negative_prompt": "",
+            "duration": str(duration),
+            "mode": mode,
+            "sound": sound,
+            "aspect_ratio": aspect_ratio
+        }
+
+        # 处理 image_list（纯 base64，不带 data URI 前缀）
+        if image_list:
+            payload["image_list"] = [
+                {"image_url": self._file_to_base64(img_path)}
+                for img_path in image_list if os.path.exists(img_path)
+            ]
+            logger.info(f"📎 使用 {len(payload['image_list'])} 张参考图")
+
+        # 处理多镜头参数
+        if multi_shot:
+            payload["multi_shot"] = True
+            if shot_type:
+                payload["shot_type"] = shot_type
+            if multi_prompt and shot_type == "customize":
+                payload["multi_prompt"] = multi_prompt
+
+        logger.info(f"📤 创建 Kling Omni-Video 任务: {prompt[:50]}...")
+
+        try:
+            token = self._get_token()
+            response = await self.client.post(
+                f"{Config.KLING_BASE_URL}{self.OMNI_VIDEO_PATH}",
+                json=payload,
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            code = result.get("code")
+            if code != 0:
+                return {"success": False, "error": result.get("message", f"API error: {code}")}
+
+            data = result.get("data", {})
+            task_id = data.get("task_id")
+            if not task_id:
+                return {"success": False, "error": "API未返回task_id"}
+
+            logger.info(f"✅ Omni-Video 任务已创建: {task_id}")
+
+            video_url = await self._wait_for_completion(task_id)
+
+            if video_url and output:
+                await self._download_file(video_url, output)
+                return {"success": True, "video_url": video_url, "output": output, "task_id": task_id}
+
+            return {"success": True, "video_url": video_url, "task_id": task_id}
+
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg:
+                error_msg = "并发任务数超限，请等待现有任务完成后再试"
+            elif "1201" in error_msg:
+                error_msg = "模型不支持或参数错误"
+            logger.error(f"❌ Kling Omni-Video 失败: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+    async def _wait_for_completion(self, task_id: str, max_wait: int = 600) -> Optional[str]:
+        """等待任务完成"""
+        import time
+        start_time = time.monotonic()
+
+        logger.info(f"⏳ 等待 Kling Omni-Video 任务完成: {task_id}")
+
+        while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed > max_wait:
+                logger.error(f"❌ 任务超时 ({max_wait}秒)")
+                return None
+
+            try:
+                token = self._get_token()
+                response = await self.client.get(
+                    f"{Config.KLING_BASE_URL}{self.QUERY_PATH.format(task_id=task_id)}",
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+                response.raise_for_status()
+                result = response.json()
+
+                code = result.get("code")
+                if code != 0:
+                    logger.warning(f"⚠️ 查询失败: {result.get('message')}")
+                    await asyncio.sleep(5)
+                    continue
+
+                data = result.get("data", {})
+                task_status = data.get("task_status")
+
+                if task_status == "succeed":
+                    task_result = data.get("task_result", {})
+                    videos = task_result.get("videos", [])
+                    if videos:
+                        video_url = videos[0].get("url")
+                        logger.info(f"✅ Omni-Video 任务完成 (耗时: {int(elapsed)}秒)")
+                        return video_url
+
+                elif task_status == "failed":
+                    task_status_msg = data.get("task_status_msg", "Unknown error")
+                    logger.error(f"❌ Omni-Video 任务失败: {task_status_msg}")
+                    return None
+
+                await asyncio.sleep(5)
+
+            except Exception as e:
+                logger.warning(f"⚠️ 查询失败: {e}")
+                await asyncio.sleep(5)
+
+    async def _download_file(self, url: str, output_path: str):
+        """下载文件"""
+        import httpx
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+        logger.info(f"✅ 已保存到: {output_path}")
+
+    async def close(self):
+        await self.client.aclose()
+
 
 class SunoClient:
     """Suno 音乐生成客户端"""
@@ -1357,6 +1575,16 @@ async def cmd_video(args):
     """视频生成命令"""
     backend = getattr(args, 'backend', 'vidu')
 
+    # BackendRouter: 根据参数自动选择最佳后端
+    image_list = getattr(args, 'image_list', None)
+    tail_image = getattr(args, 'tail_image', None)
+    if image_list and backend == 'vidu':
+        backend = 'kling-omni'
+        logger.info("🔀 检测到 --image-list，自动切换到 kling-omni 后端")
+    elif tail_image and backend == 'vidu':
+        backend = 'kling'
+        logger.info("🔀 检测到 --tail-image，自动切换到 kling 后端")
+
     # 检查对应后端的 API key
     if backend == 'kling':
         if not Config.KLING_ACCESS_KEY or not Config.KLING_SECRET_KEY:
@@ -1397,7 +1625,10 @@ async def cmd_video(args):
                     mode=args.mode if hasattr(args, 'mode') else "std",
                     sound=sound,
                     tail_image_path=getattr(args, 'tail_image', None),
-                    output=args.output
+                    output=args.output,
+                    multi_shot=multi_shot,
+                    shot_type=shot_type,
+                    multi_prompt=multi_prompt
                 )
             else:
                 result = await client.create_text2video(
@@ -1420,6 +1651,59 @@ async def cmd_video(args):
                 return 1
         finally:
             await client.close()
+
+    elif backend == 'kling-omni':
+        if not Config.KLING_ACCESS_KEY or not Config.KLING_SECRET_KEY:
+            print(json.dumps({
+                "success": False,
+                "error": "Kling API 凭证未配置",
+                "hint": "请在 config.json 中添加 KLING_ACCESS_KEY 和 KLING_SECRET_KEY",
+                "get_key": "访问 https://klingai.kuaishou.com 获取 API 凭证"
+            }, indent=2, ensure_ascii=False))
+            return 1
+
+        client = KlingOmniClient()
+        try:
+            sound = "on" if args.audio else "off"
+            duration = max(3, min(15, args.duration))
+
+            multi_shot = getattr(args, 'multi_shot', False)
+            shot_type = getattr(args, 'shot_type', None)
+            multi_prompt = None
+            if getattr(args, 'multi_prompt', None):
+                try:
+                    multi_prompt = json.loads(args.multi_prompt)
+                except json.JSONDecodeError:
+                    print(json.dumps({
+                        "success": False,
+                        "error": "multi_prompt JSON 解析失败"
+                    }, indent=2, ensure_ascii=False))
+                    return 1
+
+            image_list = getattr(args, 'image_list', None)
+
+            result = await client.create_omni_video(
+                prompt=args.prompt,
+                duration=duration,
+                mode=args.mode if hasattr(args, 'mode') else "std",
+                aspect_ratio=args.aspect_ratio,
+                sound=sound,
+                image_list=image_list,
+                multi_shot=multi_shot,
+                shot_type=shot_type,
+                multi_prompt=multi_prompt,
+                output=args.output
+            )
+
+            if result.get("success"):
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+                return 0
+            else:
+                print(f"错误: {result.get('error')}")
+                return 1
+        finally:
+            await client.close()
+
     else:
         # Vidu (Yunwu) 后端
         if not Config.YUNWU_API_KEY:
@@ -1658,8 +1942,8 @@ def main():
     video_parser.add_argument("--aspect-ratio", "-a", default="9:16", help="宽高比")
     video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
-    video_parser.add_argument("--backend", "-b", choices=["vidu", "kling"], default="vidu",
-                              help="视频生成后端 (vidu 或 kling)")
+    video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni"], default="vidu",
+                              help="视频生成后端 (vidu, kling 或 kling-omni)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro"], default="std",
                               help="生成模式 (Kling 专用: std 或 pro)")
     video_parser.add_argument("--multi-shot", action="store_true",
@@ -1670,6 +1954,8 @@ def main():
                               help="多镜头 prompt 列表 (JSON 格式)")
     video_parser.add_argument("--tail-image", type=str,
                               help="尾帧图片路径（用于首尾帧控制）")
+    video_parser.add_argument("--image-list", nargs="+",
+                              help="Omni-Video 多参考图路径列表（kling-omni 专用）")
 
     # music 子命令
     music_parser = subparsers.add_parser("music", help="生成音乐")
