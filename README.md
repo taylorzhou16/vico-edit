@@ -1,36 +1,42 @@
-# Vico Edit - AI 视频剪辑 Skill
+# 🎬 Vico Edit - AI 视频剪辑 Skill
 
 一个 Claude Code Skill，将 AI 视频剪辑能力带入你的对话中。
 
-## 架构
+## 🏗️ 架构
 
 **核心理念**：Claude 本身就是 Director Agent，不需要额外的 Agent 代码。
 
 ```
 ~/.claude/skills/vico-edit/
-├── SKILL.md           # 给 Claude 的指令 + prompt 模板
-├── vico_tools.py      # API 工具（视频/音乐/TTS/图片生成）
-├── vico_editor.py     # FFmpeg 剪辑工具
-└── README.md          # 本文件
+├── SKILL.md                # 核心工作流指令（~290 行）
+├── reference/
+│   ├── storyboard-spec.md  # 分镜设计完整规范
+│   ├── backend-guide.md    # 后端选择与参考图策略
+│   ├── prompt-guide.md     # Prompt 编写与一致性规范
+│   └── api-reference.md    # CLI 参数与环境变量
+├── vico_tools.py           # API 工具（视频/音乐/TTS/图片生成）
+├── vico_editor.py          # FFmpeg 剪辑工具
+└── config.json             # API 密钥配置
 ```
 
 **职责划分**：
 - **Claude**：意图识别、创意生成、分镜设计、工作流规划
-- **vico_tools.py**：Vidu/Suno/TTS/Gemini API 调用
+- **vico_tools.py**：Vidu/Kling/Suno/TTS/Gemini API 调用
 - **vico_editor.py**：FFmpeg 视频剪辑操作
 
-## 功能
+## ✨ 功能
 
-- **素材分析**：自动识别图片/视频内容、场景、情感
-- **创意生成**：交互式问题卡片，定制视频创意方案
-- **分镜设计**：生成分镜脚本和视频生成 Prompt
-- **AI 视频生成**：
-  - **Kling v3**：3-15秒、音画同出、多镜头、主体控制
-  - **Vidu Q3 Pro**：图生视频/文生视频（5-10秒）
-- **AI 音乐生成**：Suno V4.5 背景音乐
-- **TTS 语音合成**：火山引擎 TTS
-- **AI 图片生成**：Gemini 图片生成
-- **视频剪辑**：转场、字幕、调色、变速、音频混合
+- ✅ **素材分析** - 自动识别图片/视频内容、场景、情感
+- ✅ **创意生成** - 交互式问题卡片，定制视频创意方案
+- ✅ **分镜设计** - 生成分镜脚本和视频生成 Prompt
+- ✅ **AI 视频生成**
+  - **Kling v3**（默认）：3-15秒、首帧精确控制、画面质感好
+  - **Kling v3 Omni**：3-15秒、多参考图、角色一致性最佳
+  - **Vidu Q3 Pro**（兜底）：图生视频/文生视频（5-10秒）
+- ✅ **AI 音乐生成** - Suno V4.5 背景音乐
+- ✅ **TTS 语音合成** - 火山引擎 TTS
+- ✅ **AI 图片生成** - Gemini 图片生成
+- ✅ **视频剪辑** - 转场、字幕、调色、变速、音频混合
 
 ## 💡 使用建议
 
@@ -53,18 +59,22 @@
 
 **灵活的 API 支持**：项目中使用的图片和视频生成 API（如 Vidu、Gemini）可以自行替换为你熟悉的渠道。`vico_tools.py` 中的 API 调用封装清晰，方便接入其他服务商（如 OpenAI、Midjourney、Stability AI 等）。
 
-## 安装
+## 🚀 安装
 
 ```bash
 # 复制整个目录到 skills 目录
 mkdir -p ~/.claude/skills/vico-edit
-cp -r SKILL.md vico_tools.py vico_editor.py README.md requirements.txt ~/.claude/skills/vico-edit/
+cp -r SKILL.md reference/ vico_tools.py vico_editor.py config.json.example README.md requirements.txt ~/.claude/skills/vico-edit/
 
 # 安装依赖
 cd ~/.claude/skills/vico-edit && pip install -r requirements.txt
+
+# 配置 API 密钥
+cp config.json.example config.json
+# 编辑 config.json 填入你的 API 密钥
 ```
 
-## 使用方法
+## 📖 使用方法
 
 ```
 /vico-edit <素材目录>
@@ -80,25 +90,27 @@ cd ~/.claude/skills/vico-edit && pip install -r requirements.txt
 /vico-edit ~/vico-projects/trip_20260310/
 ```
 
-## 工具调用
+## 🛠️ 工具调用
 
 ### vico_tools.py
 
 ```bash
-# 视频生成（Vidu 后端，默认）
-python vico_tools.py video --image <图片> --prompt "<描述>" --duration 5 --output video.mp4
+# 视频生成（Kling 后端，默认）
+python vico_tools.py video --prompt "<描述>" --duration 5 --output video.mp4
+python vico_tools.py video --image <首帧图> --prompt "<描述>" --output video.mp4
 
-# 视频生成（Kling 后端）
-python vico_tools.py video --prompt "<描述>" --backend kling --duration 5 --output video.mp4
-python vico_tools.py video --image <图片> --prompt "<描述>" --backend kling --output video.mp4
-python vico_tools.py video --prompt "<描述>" --backend kling --mode pro --duration 10  # 高质量模式
+# 视频生成（Kling Omni 后端 - 参考图模式）
+python vico_tools.py video --backend kling-omni --prompt "<<<image_1>>> 在场景中" --image-list <参考图> --output video.mp4
+
+# 视频生成（Vidu 后端 - 兜底/快速原型）
+python vico_tools.py video --backend vidu --image <图片> --prompt "<描述>" --duration 5 --output video.mp4
 
 # Kling 多镜头模式
-python vico_tools.py video --prompt "<故事描述>" --backend kling --multi-shot --shot-type intelligence --duration 10
-python vico_tools.py video --prompt "<总体描述>" --backend kling --multi-shot --shot-type customize --multi-prompt '[{"index":1,"prompt":"镜头1","duration":"3"}]' --duration 5
+python vico_tools.py video --prompt "<故事描述>" --multi-shot --shot-type intelligence --duration 10
+python vico_tools.py video --prompt "<总体描述>" --multi-shot --shot-type customize --multi-prompt '[{"index":1,"prompt":"镜头1","duration":"3"}]' --duration 5
 
 # Kling 首尾帧控制
-python vico_tools.py video --image <首帧图> --tail-image <尾帧图> --prompt "<动作描述>" --backend kling --duration 5
+python vico_tools.py video --image <首帧图> --tail-image <尾帧图> --prompt "<动作描述>" --duration 5
 
 # 音乐生成
 python vico_tools.py music --prompt "<描述>" --style "Lo-fi" --output music.mp3
@@ -110,12 +122,13 @@ python vico_tools.py tts --text "<文本>" --voice female_narrator --output audi
 python vico_tools.py image --prompt "<描述>" --style cinematic --output image.png
 ```
 
-### 视频生成后端对比
+### 🎥 视频生成后端对比
 
 | 后端 | 模型 | 时长 | 特点 |
 |------|------|------|------|
-| Vidu | viduq3-pro | 5-10s | 稳定、快速 |
-| Kling | kling-v3 | 3-15s | 音画同出、多镜头、主体控制 |
+| **Kling**（默认） | kling-v3 | 3-15s | 首帧精确控制、画面质感好 |
+| **Kling Omni** | kling-v3-omni | 3-15s | 多参考图、角色一致性最佳、音画同出 |
+| **Vidu**（兜底） | viduq3-pro | 5-10s | 稳定、快速 |
 
 ### vico_editor.py
 
@@ -139,7 +152,7 @@ python vico_editor.py color --video video.mp4 --preset warm --output out.mp4
 python vico_editor.py speed --video video.mp4 --rate 1.5 --output out.mp4
 ```
 
-## 环境变量
+## 🔑 环境变量
 
 ```bash
 # Yunwu API - 用于 Vidu 视频生成 + Gemini 图片生成
@@ -157,15 +170,15 @@ export VOLCENGINE_TTS_APP_ID="your-app-id"
 export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 ```
 
-**注意**：Gemini 图片生成也走 Yunwu API，使用同一个 YUNWU_API_KEY。
+**注意**：Gemini 图片生成也走 Yunwu API，使用同一个 YUNWU_API_KEY。也可使用 `config.json` 配置（推荐）。
 
-## 工作流程
+## 🔄 工作流程
 
 ```
 素材分析 → 创意生成 → 分镜设计 → 内容生成 → 剪辑输出
 ```
 
-## 输出目录结构
+## 📁 输出目录结构
 
 ```
 ~/vico-projects/{project_name}_{timestamp}/
@@ -180,13 +193,46 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 └── output/                 # 最终视频
 ```
 
-## 依赖
+## 📦 依赖
 
 - FFmpeg 6.0+（视频处理）
 - Python 3.9+（工具运行）
 - httpx（HTTP 客户端）
 
-## 更新日志
+## 📋 更新日志
+
+### v1.3.3 (2026-03-18)
+📐 **SKILL.md 架构重构 & 默认后端切换**
+
+#### 架构重构（Anthropic Skill 规范优化）
+- ✨ **渐进式披露架构** — SKILL.md 从 1401 行压缩至 ~290 行（-80%），符合 Anthropic 推荐的 500 行上限
+- ✨ **拆分 4 个子文件** — 分镜规范、Prompt 指南、后端选择、API 参考，按需加载
+- ✨ **优化 description** — 加入 Kling Omni 关键词和触发条件描述
+- ✨ **新增工作流清单** — Anthropic 推荐的 checklist pattern
+- ✨ **新增 config.json.example** — 安全的配置模板（不含真实密钥）
+- 🔄 精简冗余内容：移除重复解释、旧版兼容格式、过长 JSON 示例
+
+#### 默认后端切换
+- 🔄 **默认后端从 Vidu 改为 Kling** — CLI `--backend` 默认值 `vidu` → `kling`
+- ✨ **自动选择逻辑增强** — 按功能需求强制切换后端（`--image-list` → omni，`--tail-image` → kling），不再仅限默认后端触发
+
+### v1.3.2 (2026-03-18)
+🎬 **Kling Omni 后端集成**
+
+#### 新功能
+- ✨ **Kling Omni API 支持**
+  - 新增 `--backend kling-omni` 后端选项
+  - `--image-list` 多参考图模式，prompt 中用 `<<<image_1>>>` 引用
+  - 支持多参考图 + multi_shot 组合
+- ✨ **自动后端选择**
+  - 提供 `--image-list` 自动用 kling-omni
+  - 提供 `--tail-image` 自动用 kling
+- ✨ **三后端选择策略** — 人物一致性 vs 场景精确度的核心权衡
+- ✨ **两条人物参考图路径** — Omni 路径（推荐）vs Kling+Gemini 首帧路径
+
+#### CLI 更新
+- 🔧 添加 `--image-list` 参数（Kling Omni 多参考图）
+- 🔧 添加 `--backend kling-omni` 选项
 
 ### v1.3.1 (2026-03-17)
 📋 **Storyboard 结构优化 & 流程完善**
@@ -348,6 +394,6 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 - ✨ 完善的错误处理和重试机制
 - 🐛 修复Suno API callbackUrl缺失问题，全功能可用
 
-## License
+## 📄 License
 
 MIT

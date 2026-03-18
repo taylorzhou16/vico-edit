@@ -1,0 +1,11 @@
+{
+  "YUNWU_API_KEY": "your-yunwu-api-key",
+  "SUNO_API_KEY": "your-suno-api-key",
+  "VOLCENGINE_TTS_APP_ID": "your-volcengine-app-id",
+  "VOLCENGINE_TTS_ACCESS_TOKEN": "your-volcengine-access-token",
+  "VISION_BASE_URL": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+  "VISION_MODEL": "kimi-k2.5",
+  "VISION_API_KEY": "your-vision-api-key",
+  "KLING_ACCESS_KEY": "your-kling-access-key",
+  "KLING_SECRET_KEY": "your-kling-secret-key"
+}

@@ -1573,15 +1573,15 @@ async def cmd_vision(args):
 
 async def cmd_video(args):
     """视频生成命令"""
-    backend = getattr(args, 'backend', 'vidu')
+    backend = getattr(args, 'backend', 'kling')
 
-    # BackendRouter: 根据参数自动选择最佳后端
+    # BackendRouter: 按功能需求强制切换（image-list 只有 omni 支持，tail-image 只有 kling 支持）
     image_list = getattr(args, 'image_list', None)
     tail_image = getattr(args, 'tail_image', None)
-    if image_list and backend == 'vidu':
+    if image_list and backend != 'kling-omni':
         backend = 'kling-omni'
         logger.info("🔀 检测到 --image-list，自动切换到 kling-omni 后端")
-    elif tail_image and backend == 'vidu':
+    elif tail_image and backend != 'kling':
         backend = 'kling'
         logger.info("🔀 检测到 --tail-image，自动切换到 kling 后端")
 
@@ -1942,8 +1942,8 @@ def main():
     video_parser.add_argument("--aspect-ratio", "-a", default="9:16", help="宽高比")
     video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
-    video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni"], default="vidu",
-                              help="视频生成后端 (vidu, kling 或 kling-omni)")
+    video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni"], default="kling",
+                              help="视频生成后端 (默认 kling; vidu 为兜底; kling-omni 用于参考图)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro"], default="std",
                               help="生成模式 (Kling 专用: std 或 pro)")
     video_parser.add_argument("--multi-shot", action="store_true",
