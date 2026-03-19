@@ -140,3 +140,138 @@
 | TTS 旁白 | TTS 后期配音 | 片头/片尾解说、场景描述、情感烘托 |
 
 **核心原则**：能收同期声的镜头，不要用 TTS！
+
+---
+
+## V3-Omni Prompt 规范（三层结构）
+
+针对 Kling V3-Omni 的**分镜图 + 视频**两阶段生成，需要分别编写 Image Prompt 和 Video Prompt。
+
+### Image Prompt 规范（分镜图生成）
+
+**用途**：控制整体视觉（场景、画风、灯光、氛围、色彩、妆造）
+
+**结构**：
+```
+Cinematic realistic start frame.
+
+[角色参考]
+Referencing the facial features, face shape, skin tone, and clothing details of:
+- image_1: {角色1外貌描述}
+- image_2: {角色2外貌描述}
+
+[场景描述]
+Scene: {具体场景描述}
+Location details: {环境细节}
+
+[角色姿态]
+{角色1}: {姿态}, {表情}
+{角色2}: {姿态}, {表情}
+
+[技术参数]
+Shot scale: {wide/medium/close-up}
+Camera angle: {eye-level/high/low}
+Lighting: {灯光描述}
+Color grade: {色调}
+
+[风格定义]
+Style: {cinematic realistic/film grain/etc.}
+```
+
+**示例**：
+
+```
+Cinematic realistic start frame.
+
+Referencing the facial features, face shape, skin tone, and clothing details of:
+- image_1: Chuyue, young Asian woman, long black hair, delicate features, wearing light grey blazer with ID badge
+- image_2: Jiazhi, mature man, short hair, deep eyes, wearing black shirt with rolled sleeves
+- image_3: Tianyu, young man, short hair, wearing light professional shirt
+
+Scene: A wide three-person shot inside the men's restroom at the doorway transition zone
+Location details: white tiles, sink and mirror visible in mid-ground, door frame as composition divider
+
+Chuyue: stands in doorway, body half-outside, hands raised in flustered waving gesture, forced apologetic smile
+Jiazhi: stands in background, upright and composed, neutral expression with hint of cool amusement
+Tianyu: side-turned, ears visibly red, arms loose
+
+Shot scale: Wide/Full shot
+Camera angle: Eye-level, frontal
+Lighting: Cold white fluorescent overhead lighting
+Color grade: Cool blue-white
+
+Style: Cinematic realistic, film grain, shallow depth of field, 16:9 aspect ratio
+```
+
+### Video Prompt 规范（视频生成）
+
+**用途**：引用分镜图构图，叠加动作、对白、镜头运动
+
+**结构**：
+```
+Referencing the {frame_name} composition.
+
+[角色确认]
+{角色1}'s appearance and positioning from {frame_name}.
+{角色2}'s appearance and positioning from {frame_name}.
+
+[整体动作]
+Overall: {整体动作描述}
+
+[分段动作]
+Motion sequence ({duration}s):
+{time_range_1}: {character} {action}{, with lip-synced dialogue}
+{time_range_2}: {action}
+...
+
+[对白同步]
+Dialogue exchange:
+- {speaker} ({emotion}): "{line}"
+- {speaker} ({emotion}): "{line}"
+
+[技术参数]
+Camera movement: {static/pan/tracking/etc.}
+Sound effects: {声音设计}
+
+Style: Cinematic realistic style. No music, no subtitles.
+```
+
+**示例**：
+
+```
+Referencing the Shot_Chuyue_Retreat_frame composition.
+
+Element_Chuyue's appearance and positioning from Shot_Chuyue_Retreat_frame.
+Element_Jiazhi's appearance and positioning from Shot_Chuyue_Retreat_frame.
+Element_Tianyu's appearance and positioning from Shot_Chuyue_Retreat_frame.
+
+Overall: Chuyue fumbles backward out the doorway while delivering awkward running apology, sparking three-way exchange that ends with deflecting compliment
+
+Motion sequence (7s):
+0-2s: Element_Chuyue steps back past threshold in clumsy hurried motion, both hands raised chest-high in frantic waving gesture, fingers spread, palms partially outward, face showing forced manic apologetic smile
+2-5s: three-way dialogue exchange, Chuyue speaks rapidly then Tianyu cuts back, with lip-synced dialogue
+5-7s: Element_Chuyue catches herself, voice softening into barely-held laugh, finishing line, with lip-synced dialogue
+
+Dialogue exchange:
+- Chuyue (尴尬赔笑): "可以，我承认，today is on me。我职业素养很高的，绝不乱说。"
+- Tianyu (flat, cutting back): "那你别一脸见鬼。"
+- Chuyue (voice softening into barely-held laugh): "不是见鬼，是见……见真爱。"
+
+Camera movement: static wide shot, eye-level frontal — all three characters in frame throughout
+Sound effects: shuffling footsteps on tile, ambient restroom hum
+
+Cinematic realistic style. No music, no subtitles.
+```
+
+### 关键要点
+
+**Image Prompt**：
+- 必须包含角色参考（image_1, image_2...）
+- 必须包含画面比例（16:9 / 9:16）
+- 场景、灯光、相机参数要详细
+
+**Video Prompt**：
+- 必须引用分镜图（Referencing XXX_frame composition）
+- 动作必须分段描述（0-2s, 2-5s...）
+- 对白必须标注情绪和 lip-sync
+- 声音设计单独列出

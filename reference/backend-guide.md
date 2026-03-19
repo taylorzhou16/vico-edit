@@ -5,9 +5,10 @@
 - 三种后端能力对比
 - 后端选择决策树
 - 自动选择逻辑
-- 人物参考图两条路径
+- 人物参考图三条路径
 - 路径 A：Kling Omni（角色一致性优先）
 - 路径 B：Kling + Gemini 首帧（场景精确度优先）
+- **路径 C：Kling V3-Omni（推荐）**
 - Gemini Prompt 注意事项
 
 ---
@@ -33,14 +34,16 @@
 
 ## 后端选择决策树
 
-**核心权衡：人物一致性 vs 场景精确度**
+**核心权衡：人物一致性 vs 场景精确度 vs 两者兼顾**
 
 ```
 镜头是否包含人物？
 ├── 是 → 是否有注册的人物参考图？
-│        ├── 是 → 哪个优先级更高？
-│        │        ├── 人物一致性优先 → kling-omni + image_list
-│        │        └── 场景精确度优先 → kling + Gemini 生首帧
+│        ├── 是 → 需要场景精确控制吗？
+│        │        ├── 是 → 需要角色一致性吗？
+│        │        │        ├── 两者都要 → kling-omni V3 + 分镜图 (Path C)
+│        │        │        └── 场景优先，角色可接受波动 → kling + Gemini 首帧 (Path B)
+│        │        └── 否 → kling-omni --image-list (Path A)
 │        └── 否 → 是否需要精确控制首帧画面？
 │                 ├── 是 → kling + image（Gemini 生首帧）
 │                 └── 否 → kling text2video
@@ -53,11 +56,12 @@
 
 | 场景 | 后端 | 关键参数 |
 |------|------|---------|
-| 有人物参考图，要保持一致 | **kling-omni** | `--image-list ref.jpg` |
-| 需要精确首帧画面 | **kling** | `--image first_frame.png` |
-| 需要首尾帧动画 | **kling** | `--image first.png --tail-image last.png` |
-| 多镜头剧情 + 角色一致 | **kling-omni** | `--image-list ref.jpg --multi-shot` |
-| 简单无人场景 / 快速原型 | **kling**（默认）或 vidu | 无需特殊参数 |
+| **剧情视频，场景+角色都要** | **kling-omni V3** | `--image frame.png --image-list ref.jpg` |
+| 有人物参考图，要保持一致 | kling-omni | `--image-list ref.jpg` |
+| 需要精确首帧画面 | kling | `--image first_frame.png` |
+| 需要首尾帧动画 | kling | `--image first.png --tail-image last.png` |
+| 多镜头剧情 + 角色一致 | kling-omni | `--image-list ref.jpg --multi-shot` |
+| 简单无人场景 / 快速原型 | kling（默认）或 vidu | 无需特殊参数 |
 
 ---
 
@@ -70,18 +74,22 @@
 
 ---
 
-## 人物参考图两条路径
+## 人物参考图三条路径
 
 **仅当已注册人物参考图时考虑。**
 
-| | Kling Omni 路径 | Kling + Gemini 路径 |
-|---|---|---|
-| **流程** | 参考图 → Kling Omni `--image-list` | 参考图 → Gemini 生分镜图 → Kling img2video |
-| **优势** | 路径简单，无需中间步骤 | 画面质感好，场景精确可控 |
-| **一致性** | 同一参考图多镜头自动一致 | 多镜头间一致性难保证 |
-| **适用** | 人物一致性优先的剧情视频 | 需要精确构图/场景控制 |
+| | Path A: Kling Omni | Path B: Kling + Gemini | **Path C: V3-Omni（推荐）** |
+|---|---|---|---|
+| **流程** | 参考图 → Kling Omni `--image-list` | 参考图 → Gemini 生分镜图 → Kling img2video | **分镜图 → V3-Omni + image_list** |
+| **优势** | 路径简单，无需中间步骤 | 场景精确可控 | **两者兼顾：场景可控 + 角色一致** |
+| **一致性** | 同一参考图多镜头自动一致 | 多镜头间一致性难保证 | **分镜图+参考图双重保障** |
+| **场景控制力** | 弱（纯prompt控制） | 强（分镜图定义） | **强（分镜图定义）** |
+| **适用** | 快速原型、人物一致性优先 | 场景精确度优先 | **剧情视频（推荐）** |
 
-**选择建议**：人物一致性优先 → **Kling Omni**（推荐）；场景精确度优先 → **Kling + Gemini**
+**选择建议**：
+- 快速原型、人物一致性优先 → **Path A: Kling Omni**
+- 场景精确度优先、可接受角色波动 → **Path B: Kling + Gemini**
+- **剧情视频、两者都要 → Path C: V3-Omni（推荐）**
 
 ---
 
@@ -128,13 +136,146 @@ python vico_tools.py video --backend kling-omni \
 
 ---
 
-## 路径 B：Kling + Gemini 首帧
+## 路径 C：Kling V3-Omni（推荐）
+
+**V3-Omni 双阶段生成流程**——结合分镜图视觉控制与角色参考一致性。
+
+```
+阶段1: 角色参考图 + Image Prompt → Gemini 生成分镜图（控制场景/画风/灯光/氛围/色彩/妆造）
+         ↓
+阶段2: 分镜图 + 角色参考图 + Video Prompt → Kling V3-Omni 生成视频
+```
+
+**关键认知**：
+- **分镜图**不只是首帧控制，还控制整体视觉（场景、画风、灯光、氛围、色彩、妆造）
+- **角色参考图**保证角色面貌/身材一致性
+- 两者结合：分镜图提供整体视觉定义，人物参考保证角色不崩
+
+### 与 Path A/B 的区别
+
+| 路径 | 一致性来源 | 场景控制力 | 适用场景 |
+|------|-----------|-----------|---------|
+| Path A (Omni) | image_list 参考图 | 弱（prompt控制） | 快速生成、人物一致性优先 |
+| Path B (Gemini→Kling) | 分镜图 | 强 | 场景精确控制，但角色可能崩 |
+| **Path C (V3-Omni)** | **分镜图 + image_list** | **强** | **两者兼顾（推荐）** |
+
+### Stage 1: 生成分镜图
+
+```bash
+python vico_tools.py image \
+  --prompt "Cinematic realistic start frame.\nReferencing...\nScene: ...\nLighting: ...\nStyle: ..." \
+  --reference <角色参考图> \
+  --output generated/frames/{shot_id}_frame.png
+```
+
+**Image Prompt 结构**：
+```
+Cinematic realistic start frame.
+
+Referencing the facial features, face shape, skin tone, and clothing details of:
+- image_1: {角色1外貌描述}
+- image_2: {角色2外貌描述}
+
+Scene: {具体场景描述}
+Location details: {环境细节}
+
+{角色1}: {姿态}, {表情}
+{角色2}: {姿态}, {表情}
+
+Shot scale: {wide/medium/close-up}
+Camera angle: {eye-level/high/low}
+Lighting: {灯光描述}
+Color grade: {色调}
+
+Style: {cinematic realistic/film grain/etc.}
+```
+
+### Stage 2: V3-Omni 生成视频
+
+```bash
+python vico_tools.py video \
+  --backend kling-omni \
+  --image generated/frames/{shot_id}_frame.png \
+  --image-list <角色参考图> \
+  --prompt "Referencing {shot_id}_frame composition...\nMotion sequence...\nDialogue..." \
+  --audio --output output.mp4
+```
+
+**Video Prompt 结构**：
+```
+Referencing the {frame_name} composition.
+
+{角色1}'s appearance and positioning from {frame_name}.
+{角色2}'s appearance and positioning from {frame_name}.
+
+Overall: {整体动作描述}
+
+Motion sequence ({duration}s):
+{time_range_1}: {character} {action}{, with lip-synced dialogue}
+{time_range_2}: {action}
+...
+
+Dialogue exchange:
+- {speaker} ({emotion}): "{line}"
+- {speaker} ({emotion}): "{line}"
+
+Camera movement: {static/pan/tracking/etc.}
+Sound effects: {声音设计}
+
+Style: Cinematic realistic style. No music, no subtitles.
+```
+
+### V3-Omni Storyboard 标注
+
+```json
+{
+  "shot_id": "scene1_shot1",
+  "duration": 7,
+  "workflow_version": "v3_omni_v1",
+  "storyboard": {
+    "chinese_description": "连续动作与对话...",
+    "shot_scale": "全景",
+    "location": "男洗手间门口过渡区",
+    "dialogue_segments": [
+      {"time": "0-2s", "speaker": "初月", "line": "可以，我承认...", "emotion": "尴尬赔笑"}
+    ],
+    "transition": "cut"
+  },
+  "frame_generation": {
+    "output_key": "scene1_shot1_frame",
+    "prompt": "Cinematic realistic start frame...",
+    "character_refs": ["Element_Chuyue", "Element_Jiazhi"],
+    "scene": "男洗手间门口，白色瓷砖...",
+    "lighting": "冷白色荧光灯",
+    "camera": {"shot_scale": "wide", "angle": "eye-level"},
+    "style": "cinematic realistic, cool blue-white"
+  },
+  "video_generation": {
+    "backend": "kling_v3_omni",
+    "frame_reference": "scene1_shot1_frame",
+    "prompt": "Referencing scene1_shot1_frame composition...",
+    "motion_overall": "Chuyue fumbles backward...",
+    "motion_segments": [
+      {"time": "0-2s", "action": "steps back...", "character": "Element_Chuyue"},
+      {"time": "2-5s", "action": "three-way dialogue", "lip_sync": true}
+    ],
+    "camera_movement": "static wide shot",
+    "sound_effects": "shuffling footsteps on tile"
+  }
+}
+```
+
+---
+
+## 路径 B：Kling + Gemini 首帧（传统）
 
 ⚠️ **核心原则**：参考图是**样貌参考图**，只取面部/体态特征，**不能直接做 img2video 首帧**。参考图中的场景、服饰、姿态都是干扰。
 
 ```
-人物参考图 → Gemini 生成分镜图（指定场景/服饰/姿态）→ img2video
+人物参考图 → Gemini 生成分镜图（指定场景/服饰/姿态）→ img2video（Kling普通版）
 ```
+
+**注意**：此路径生成的首帧作为普通 Kling img2video 的输入，**不使用** Omni 的 image_list 功能。角色一致性不如 Path C。
 
 ### 单人镜头
 

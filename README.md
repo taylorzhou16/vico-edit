@@ -201,6 +201,26 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 
 ## 📋 更新日志
 
+### v1.3.4 (2026-03-19)
+🎬 **Kling V3-Omni 双阶段工作流规范化**
+
+#### 文档更新
+- ✨ **新增 V3-Omni 三层结构规范** — storyboard + frame_generation + video_generation
+  - `storyboard-spec.md`：添加三层 schema 定义（storyboard/frame/video）
+  - `prompt-guide.md`：添加 Image Prompt 和 Video Prompt 编写规范（基于胡楚月范式）
+  - `backend-guide.md`：新增 Path C（V3-Omni 推荐路径），更新决策树和路径对比
+
+- 📝 **Image Prompt 规范**
+  - 结构：Cinematic realistic start frame → Character refs → Scene → Lighting → Camera → Style
+  - 必须包含角色参考（image_1, image_2...）、画面比例、场景、灯光、相机参数
+
+- 📝 **Video Prompt 规范**
+  - 结构：Referencing frame composition → Motion segments → Dialogue exchange → Camera → Sound
+  - 时间分段格式（"0-2s", "2-5s"）、对白同步标记、声音设计描述
+
+#### 架构调整
+- 🗑️ 移除错误创建的 `vico-templates` Python 代码（应作为文档规范而非代码模板）
+
 ### v1.3.3 (2026-03-18)
 📐 **SKILL.md 架构重构 & 默认后端切换**
 

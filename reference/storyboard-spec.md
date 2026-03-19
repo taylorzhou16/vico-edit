@@ -206,6 +206,88 @@
 
 ---
 
+## V3-Omni 三层结构（推荐）
+
+针对 Kling V3-Omni 的**分镜图 + 视频**两阶段生成流程，推荐采用三层结构：
+
+### 设计理念
+
+**分镜图（Storyboard Frame）**：不只是首帧控制，还控制整体视觉（场景、画风、灯光、氛围、色彩、妆造）
+
+**视频生成**：引用分镜图构图，叠加动作和人物参考
+
+### Schema 结构
+
+```json
+{
+  "shot_id": "scene1_shot1",
+  "duration": 7,
+  "workflow_version": "v3_omni_v1",
+
+  "storyboard": {
+    "chinese_description": "连续动作与对话 (约7s)全景。初月手忙脚乱退到门外...",
+    "shot_scale": "全景",
+    "location": "男洗手间门口过渡区",
+    "dialogue_segments": [
+      {"time": "0-2s", "speaker": "初月", "line": "可以，我承认...", "emotion": "尴尬赔笑"},
+      {"time": "2-4s", "speaker": "天宇", "line": "那你别一脸见鬼。", "emotion": "flat"}
+    ],
+    "transition": "cut"
+  },
+
+  "frame_generation": {
+    "output_key": "scene1_shot1_frame",
+    "prompt": "Cinematic realistic start frame...",
+    "character_refs": ["Element_Chuyue", "Element_Jiazhi", "Element_Tianyu"],
+    "scene": "男洗手间门口，白色瓷砖...",
+    "lighting": "冷白色荧光灯",
+    "camera": {"shot_scale": "wide", "angle": "eye-level"},
+    "style": "cinematic realistic, cool blue-white"
+  },
+
+  "video_generation": {
+    "backend": "kling_v3_omni",
+    "frame_reference": "scene1_shot1_frame",
+    "prompt": "Referencing scene1_shot1_frame composition...",
+    "motion_overall": "Chuyue fumbles backward...",
+    "motion_segments": [
+      {"time": "0-2s", "action": "steps back past threshold...", "character": "Element_Chuyue"},
+      {"time": "2-5s", "action": "three-way dialogue exchange", "lip_sync": true}
+    ],
+    "camera_movement": "static wide shot",
+    "sound_effects": "shuffling footsteps on tile"
+  }
+}
+```
+
+### 字段说明
+
+**storyboard 层**（中文，给人看）
+- `chinese_description`: 剧情描述
+- `shot_scale`: 景别（全景/中景/特写等）
+- `location`: 场景位置
+- `dialogue_segments`: 对白时间轴
+- `transition`: 转场效果
+
+**frame_generation 层**（生成分镜图）
+- `output_key`: 输出文件名
+- `prompt`: 完整的 Image Prompt
+- `character_refs`: 引用的角色元素
+- `scene`: 场景描述
+- `lighting`: 灯光描述
+- `camera`: 相机参数（shot_scale, angle, lens）
+- `style`: 视觉风格
+
+**video_generation 层**（生成视频）
+- `frame_reference`: 引用的分镜图 output_key
+- `prompt`: 完整的 Video Prompt
+- `motion_overall`: 整体动作描述
+- `motion_segments`: 分段动作（带时间轴）
+- `camera_movement`: 镜头运动
+- `sound_effects`: 声音设计
+
+---
+
 ## 多镜头模式（Kling / Kling Omni）
 
 Kling 和 Kling Omni 均支持多镜头一镜到底。
