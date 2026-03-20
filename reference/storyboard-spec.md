@@ -75,16 +75,19 @@
 ### 分镜字段（Shot）
 
 - `shot_id`：分镜编号（格式见下文命名规则）
-- `duration`：时长（2-5秒）
-- `shot_type`：establishing / dialogue / action / closeup / multi_shot
+- `duration`：时长（单位：秒，范围：2-5秒）
+- `shot_type`：景别类型，可选：establishing（全景）/ dialogue（对话）/ action（动作）/ closeup（特写）/ insert（插入镜头）
 - `description`：简要描述
-- `generation_mode`：text2video / img2video / omni-video
-- `multi_shot`：true / false
-- `generation_backend`：kling / kling-omni / vidu
+- `generation_mode`：生成模式，可选：text2video / img2video / omni-video
+- `multi_shot`：是否为多镜头模式，true / false（与 shot_type 独立）
+- `generation_backend`：后端选择，可选：kling / kling-omni / vidu
 - `video_prompt`：视频生成提示词
 - `image_prompt`：图片生成提示词（img2video/omni-video 时使用）
-- `frame_strategy`：none / first_frame_only / first_and_last_frame
+- `frame_strategy`：首尾帧策略，可选：none / first_frame_only / first_and_last_frame
+  - **注意**：Omni 模式（`generation_mode: omni-video`）不使用此字段，因为 Omni 使用 `reference_images` 而非首帧控制
 - `reference_images`：参考图路径列表（omni-video 必需，img2video 可选）
+  - Omni 模式：包含分镜图 + 角色参考图
+  - img2video 模式：可选，用于 Gemini 生成分镜图时的参考
 - `dialogue`：台词信息（结构化）
 - `transition`：转场效果
 - `audio`：音频配置（enabled, no_bgm, dialogue）
@@ -116,7 +119,12 @@
 | 类型 | 示例 | 说明 |
 |------|------|------|
 | 单分镜 | `scene1_shot1`、`scene2_shot1` | 标准命名 |
-| 多镜头模式 | `scene1_shot2to4_multi` | 合并分镜，带 `_multi` 后缀 |
+| 多镜头模式 | `scene1_shot2to4_multi` | 合并分镜，范围用 `to` 连接，带 `_multi` 后缀 |
+
+**多镜头命名规范**：
+- 合并 shot2、shot3、shot4 → `scene1_shot2to4_multi`
+- 合并 shot1 到 shot5 → `scene1_shot1to5_multi`
+- **不要**使用下划线连接：`scene1_shot2_shot3_shot4_multi` ❌
 
 ---
 
@@ -138,8 +146,9 @@
 
 | 条件 | 生成模式 | 后端 | 说明 |
 |------|---------|------|------|
-| 有参考图 + 多镜头人物 | `omni-video` | `kling-omni` | 保证跨镜头角色一致性 |
-| 有参考图 + 单镜头人物 | `img2video` | `kling` | 首帧精确控制 |
+| 有参考图 + 多镜头人物 | `omni-video` | `kling-omni` | 保证跨镜头角色一致性（Omni多参考图） |
+| 有参考图 + 单镜头人物 | `img2video` | `kling` | 首帧精确控制（Gemini生首帧） |
+| 有参考图 + 单镜头人物（快速原型） | `omni-video` | `kling-omni` | 仅用参考图，不生成分镜图 |
 | 无参考图 + 人物 | `text2video` | `kling` | Phase 2 已警告 |
 | 纯场景无人物 | `text2video` | `kling` | 默认 |
 
@@ -311,10 +320,11 @@
 - `reference_images`: 参考图路径列表
 - `visual_description`: 视觉特征描述
 
-**character_image_mapping**: 自动生成的映射表（Phase 3）
+**character_image_mapping**: 自动生成的映射表（Phase 3），**Storyboard 全局字段**
 - Key: `element_id` (如 `Element_Chuyue`)
 - Value: `image_N` tag (如 `image_1`)
 - 映射规则：按 characters 数组顺序分配 image_1, image_2...
+- 注意：此字段放在 storyboard 根级别，不在 shot 内部重复
 
 ### Kling Omni 模式示例
 
@@ -325,8 +335,8 @@
   "generation_backend": "kling-omni",
   "video_prompt": "小美（<<<image_1>>>）戴着耳机，在赛车模拟器前全神贯注。竖屏9:16构图。",
   "reference_images": ["materials/personas/xiaomei_ref.jpg"],
-  "frame_strategy": "first_frame_only",
-  "image_prompt": "Cinematic realistic start frame...",
+  "frame_strategy": "none",
+  "image_prompt": "Cinematic realistic start frame...（可选，用于分镜图生成）",
   "multi_shot": false,
   "audio": {
     "enabled": true,
@@ -336,11 +346,29 @@
 }
 ```
 
+**注意**：Omni 模式使用 `reference_images` 作为参考图，不使用 `frame_strategy` 首帧控制。`frame_strategy` 应设为 `none`。如果需要生成分镜图，使用 `image_prompt` 单独记录分镜图 prompt。
+
 ---
 
 ## V3-Omni 两阶段结构（推荐）
 
-针对 Kling V3-Omni 的**分镜图 + 视频**两阶段生成流程，推荐采用分层数据结构：
+针对 Kling V3-Omni 的**分镜图 + 视频**两阶段生成流程，推荐采用分层数据结构。
+
+### 与标准结构的关系
+
+**V3-Omni 三层结构是标准 Shot 结构的扩展**，而非替代：
+- 标准结构字段（`shot_id`, `duration`, `generation_mode`, `generation_backend` 等）仍然保留
+- 三层结构将 `image_prompt` 和 `video_prompt` 展开为更详细的结构化字段
+- `character_image_mapping` 始终放在 **Storyboard 全局**，不在 shot 内部重复
+
+### 字段映射表
+
+| 标准结构字段 | V3-Omni 结构对应 | 说明 |
+|-------------|-----------------|------|
+| `image_prompt` | `frame_generation.prompt` | 分镜图生成 prompt |
+| `video_prompt` | `video_generation.prompt` | 视频生成 prompt |
+| `reference_images` | `frame_generation` 生成后自动加入 | 分镜图输出 + 角色参考图 |
+| `frame_strategy` | 始终为 `"none"` | Omni 不使用首帧控制 |
 
 ### 设计理念
 
@@ -354,12 +382,10 @@
 {
   "shot_id": "scene1_shot1",
   "duration": 7,
-  "workflow_version": "v3_omni_v1",
-  "character_image_mapping": {
-    "Element_Chuyue": "image_1",
-    "Element_Jiazhi": "image_2",
-    "Element_Tianyu": "image_3"
-  },
+  "generation_mode": "omni-video",
+  "generation_backend": "kling-omni",
+  "multi_shot": false,
+  "reference_images": [],
 
   "storyboard": {
     "chinese_description": "连续动作与对话 (约7s)全景。初月手忙脚乱退到门外...",
@@ -399,10 +425,7 @@
 
 ### 字段说明
 
-**character_image_mapping**: 角色到参考图占位符的映射
-- Key: Element ID (如 `Element_Chuyue`)
-- Value: Reference Tag (如 `image_1`)
-- 用于自动替换 Prompt 中的占位符
+**注意**：`character_image_mapping` 始终放在 **Storyboard 全局**，不在 shot 内部重复。V3-Omni 结构使用 `frame_generation.character_refs` 引用角色。
 
 **storyboard 层**（中文，给人看）
 - `chinese_description`: 剧情描述
