@@ -405,6 +405,12 @@ python vico_tools.py video \
 
 **工具调用详细参数**：See [reference/api-reference.md](reference/api-reference.md)
 
+### 音乐生成
+
+调用 `vico_tools.py music` 必须传 `--creative` 参数。
+
+原因：从 `creative.json` 的 `music` 字段读取 `prompt`（音乐描述）和 `style`（音乐风格），避免使用默认风格。
+
 ### Phase 4 产出
 
 - `generated/videos/*.mp4` — 生成的视频片段
@@ -414,6 +420,16 @@ python vico_tools.py video \
 ---
 
 ## Phase 5: 剪辑输出
+
+### 视频拼接
+
+调用 `vico_editor.py concat` 必须传 `--storyboard` 参数。
+
+原因：从 `storyboard.json` 读取 `aspect_ratio`，确保输出视频比例正确。
+
+### 音频保护
+
+视频片段可能包含同期声、音效，拼接时不能丢失。无声片段会自动补静音轨，确保音画同步。
 
 ### 视频参数校验
 
@@ -446,13 +462,13 @@ python ~/.claude/skills/vico-edit/vico_tools.py check
 # 视频生成（必须从 storyboard.json 读取 aspect_ratio）
 python ~/.claude/skills/vico-edit/vico_tools.py video --prompt <描述> --aspect-ratio {aspect_ratio} --output <输出>
 
-# 音乐 / TTS / 图片
-python ~/.claude/skills/vico-edit/vico_tools.py music --prompt <描述> --output <输出>
+# 音乐（必须传 --creative，从 creative.json 读取 prompt 和 style）
+python ~/.claude/skills/vico-edit/vico_tools.py music --creative creative/creative.json --output <输出>
 python ~/.claude/skills/vico-edit/vico_tools.py tts --text <文本> --output <输出>
 python ~/.claude/skills/vico-edit/vico_tools.py image --prompt <描述> --aspect-ratio {aspect_ratio} --output <输出>
 
-# 剪辑
-python ~/.claude/skills/vico-edit/vico_editor.py concat --inputs <视频列表> --output <输出>
+# 剪辑（concat 必须传 --storyboard，从 storyboard.json 读取 aspect_ratio）
+python ~/.claude/skills/vico-edit/vico_editor.py concat --inputs <视频列表> --output <输出> --storyboard storyboard/storyboard.json
 python ~/.claude/skills/vico-edit/vico_editor.py mix --video <视频> --bgm <音乐> --output <输出>
 python ~/.claude/skills/vico-edit/vico_editor.py transition --inputs <v1> <v2> --type <类型> --output <输出>
 python ~/.claude/skills/vico-edit/vico_editor.py color --video <视频> --preset <预设> --output <输出>

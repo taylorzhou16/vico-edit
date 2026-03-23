@@ -83,6 +83,27 @@ def get_aspect_from_storyboard(storyboard_path: str) -> Optional[str]:
         return None
 
 
+async def has_audio_track(video_path: str) -> bool:
+    """检测视频是否有音频轨"""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "a",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0",
+        video_path
+    ]
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await process.communicate()
+        return len(stdout.strip()) > 0
+    except Exception:
+        return False
+
+
 async def get_video_info(video_path: str) -> Dict[str, Any]:
     """获取视频信息"""
     cmd = [
@@ -213,6 +234,7 @@ async def normalize_videos(
     - 编码：H.264
     - 帧率：24fps
     - 像素格式：yuv420p
+    - 音频：统一 48kHz 立体声，无声片段补静音轨
 
     Returns:
         归一化后的视频路径列表
@@ -222,21 +244,42 @@ async def normalize_videos(
     output_path.mkdir(parents=True, exist_ok=True)
 
     normalized_paths = []
+    vf_filter = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
 
     for i, video_path in enumerate(video_paths):
         output_file = output_path / f"normalized_{i:03d}.mp4"
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", video_path,
-            "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-            "-r", "24",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "128k",
-            "-ar", "44100",
-            str(output_file)
-        ]
+        # 检测是否有音频轨
+        has_audio = await has_audio_track(video_path)
+
+        if has_audio:
+            # 有音频：正常归一化
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vf", vf_filter,
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-r", "24",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "128k",
+                "-ar", "48000",
+                str(output_file)
+            ]
+        else:
+            # 无音频：补静音轨
+            logger.info(f"🔇 视频无音频轨，补静音轨: {video_path}")
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+                "-vf", vf_filter,
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-r", "24",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "128k",
+                "-shortest",
+                str(output_file)
+            ]
 
         success, msg = await run_ffmpeg(cmd)
 
@@ -258,10 +301,10 @@ async def concat_videos(
     aspect: str = "9:16"
 ) -> Dict[str, Any]:
     """
-    拼接多个视频
+    拼接多个视频（使用 concat filter，保证音画同步）
 
     Args:
-        inputs: 输入视频路径列表
+        inputs: 输入视频路径列表（所有片段必须有音频轨，由 normalize_videos 保证）
         output: 输出视频路径
         aspect: 目标宽高比
     """
@@ -276,21 +319,21 @@ async def concat_videos(
         shutil.copy(inputs[0], output)
         return {"success": True, "output": output}
 
-    # 创建 concat 文件
-    concat_file = Path(output).parent / f"concat_{uuid.uuid4().hex[:6]}.txt"
-    with open(concat_file, "w") as f:
-        for inp in inputs:
-            f.write(f"file '{os.path.abspath(inp)}'\n")
+    # 使用 concat filter（所有片段必须有音频轨）
+    n = len(inputs)
+    filter_str = f"concat=n={n}:v=1:a=1[outv][outa]"
 
-    # 获取目标分辨率
-    w, h = get_resolution_for_aspect(aspect)
+    # 构建输入参数
+    input_args = []
+    for inp in inputs:
+        input_args.extend(["-i", inp])
 
-    # 统一分辨率后拼接
     cmd = [
         "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", str(concat_file),
-        "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2",
+        *input_args,
+        "-filter_complex", filter_str,
+        "-map", "[outv]",
+        "-map", "[outa]",
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-c:a", "aac", "-b:a", "128k",
         "-pix_fmt", "yuv420p",
@@ -298,10 +341,6 @@ async def concat_videos(
     ]
 
     success, msg = await run_ffmpeg(cmd)
-
-    # 清理临时文件
-    if concat_file.exists():
-        concat_file.unlink()
 
     if success:
         logger.info(f"✅ 视频拼接完成: {output}")

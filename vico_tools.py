@@ -1985,18 +1985,35 @@ async def cmd_video(args):
 
 async def cmd_music(args):
     """音乐生成命令"""
-    # 优先级：命令行 --style > creative.json > 报错提示
+    # 优先级：命令行 > creative.json > 报错/默认值
+    prompt = args.prompt
     style = args.style
 
-    if style is None and hasattr(args, 'creative') and args.creative:
+    # 从 creative.json 读取 prompt 和 style
+    if hasattr(args, 'creative') and args.creative:
         config = get_music_config_from_creative(args.creative)
         if config:
-            style = config.get("style")
-            if style:
-                logger.info(f"🎵 从 creative.json 读取音乐风格: {style}")
+            if prompt is None:
+                prompt = config.get("prompt")
+                if prompt:
+                    logger.info(f"🎵 从 creative.json 读取音乐描述: {prompt[:50]}...")
+            if style is None:
+                style = config.get("style")
+                if style:
+                    logger.info(f"🎵 从 creative.json 读取音乐风格: {style}")
 
+    # prompt 必须提供
+    if prompt is None:
+        print(json.dumps({
+            "success": False,
+            "error": "必须提供音乐描述",
+            "hint": "请通过 --prompt 或 --creative 参数提供音乐描述"
+        }, indent=2, ensure_ascii=False))
+        return 1
+
+    # style 有默认值
     if style is None:
-        style = "Lo-fi, Chill"  # 最终默认值
+        style = "Lo-fi, Chill"
         logger.info(f"🎵 使用默认音乐风格: {style}")
 
     if not Config.SUNO_API_KEY:
@@ -2011,7 +2028,7 @@ async def cmd_music(args):
     client = SunoClient()
     try:
         result = await client.generate(
-            prompt=args.prompt,
+            prompt=prompt,
             style=style,
             instrumental=args.instrumental,
             output=args.output
@@ -2222,9 +2239,9 @@ def main():
 
     # music 子命令
     music_parser = subparsers.add_parser("music", help="生成音乐")
-    music_parser.add_argument("--prompt", "-p", required=True, help="音乐描述")
+    music_parser.add_argument("--prompt", "-p", default=None, help="音乐描述（可从 creative.json 自动读取）")
     music_parser.add_argument("--style", "-s", default=None, help="音乐风格（可从 creative.json 自动读取）")
-    music_parser.add_argument("--creative", "-c", help="creative.json 路径，自动读取音乐风格")
+    music_parser.add_argument("--creative", "-c", help="creative.json 路径，自动读取 prompt 和 style")
     music_parser.add_argument("--no-instrumental", dest="instrumental", action="store_false", help="包含人声（默认纯音乐）")
     music_parser.set_defaults(instrumental=True)
     music_parser.add_argument("--output", "-o", help="输出文件路径")
