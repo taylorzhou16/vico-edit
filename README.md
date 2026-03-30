@@ -201,6 +201,39 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 
 ## 📋 更新日志
 
+### v1.3.10 (2026-03-23)
+🎵 **音乐生成参数规范化**
+
+#### 修复
+- 🐛 **music 命令 style 参数必须提供** — 删除 Lo-fi Chill 默认值，避免风格不匹配
+  - 必须通过 `--creative` 从 creative.json 读取
+  - 或手动传 `--prompt` 和 `--style` 参数
+
+### v1.3.9 (2026-03-23)
+🎬 **音画同步修复**
+
+#### 修复
+- 🐛 **视频拼接音画不同步问题** — 无声片段导致后续视频音频错位
+  - 新增 `has_audio_track()` 检测视频是否有音频轨
+  - `normalize_videos()` 对无声片段自动补静音轨
+  - `concat_videos()` 改用 concat filter，保证音画同步
+
+#### 改进
+- 🔄 `music` 命令 `--prompt` 改为非必须，可从 creative.json 读取
+- 📝 SKILL.md: Phase 5 新增音频保护说明
+
+### v1.3.8 (2026-03-23)
+🔧 **参数传递规范化**
+
+#### 修复
+- 🐛 **硬编码默认值问题** — CLI 参数应优先从 storyboard.json 读取
+  - `vico_editor.py`: concat/image 命令添加 `--storyboard` 参数
+  - `vico_tools.py`: video/image 添加 `--storyboard`，music 添加 `--creative` 参数
+  - 统一 KlingClient/KlingOmniClient 默认 aspect_ratio 为 `"9:16"`
+
+#### 改进
+- 🔄 Suno 日志同时显示 prompt 和 style，避免误导用户
+
 ### v1.3.7 (2026-03-20)
 🔧 **执行阶段修复 & 图片尺寸优化**
 

@@ -211,6 +211,11 @@ class Config:
     KLING_BASE_URL: str = "https://api-beijing.klingai.com"
     KLING_MODEL: str = "kling-v3"  # kling-v3 (v3-omni) 或 kling-v1-5 或 kling-v1
 
+    # fal.ai API
+    @property
+    def FAL_API_KEY(self) -> str:
+        return self.get("FAL_API_KEY", "")
+
 
 Config = Config()
 
@@ -1026,6 +1031,167 @@ class KlingOmniClient:
         await self.client.aclose()
 
 
+class FalKlingClient:
+    """
+    Kling 视频生成客户端 (通过 fal.ai 代理)
+
+    与官方 Kling API 完全一致：
+    - prompt 写法一致
+    - 参数字段一致（duration, aspect_ratio, generate_audio 等）
+    - 图片输入方式一致
+
+    唯一区别：使用 --provider fal 而非 --provider kling
+
+    支持的功能：
+    - 文生视频：只传 prompt
+    - 单图生成：传 image_url
+    - 多参考图：传 image_urls 列表
+    - 首尾帧：传 image_url + tail_image_url
+    """
+
+    MODEL_ID = "fal-ai/kling-video/o3/pro/reference-to-video"
+
+    def __init__(self):
+        import fal_client
+        import httpx
+        self.fal_client = fal_client.AsyncClient(key=Config.FAL_API_KEY)
+        self.http_client = httpx.AsyncClient(timeout=300.0)
+
+    async def create_video(
+        self,
+        prompt: str,
+        duration: int = 5,
+        aspect_ratio: str = "9:16",
+        generate_audio: bool = True,
+        image_url: str = None,        # 首帧/单图
+        image_urls: List[str] = None,  # 多参考图
+        tail_image_url: str = None,    # 尾帧
+        output: str = None
+    ) -> Dict[str, Any]:
+        """
+        统一视频生成方法
+
+        Args:
+            prompt: 视频描述
+            duration: 时长（3-15秒）
+            aspect_ratio: 宽高比 (16:9, 9:16, 1:1)
+            generate_audio: 是否生成音频
+            image_url: 首帧图片（路径或 URL）
+            image_urls: 参考图列表（路径或 URL）
+            tail_image_url: 尾帧图片（路径或 URL）
+            output: 输出文件路径
+        """
+        payload = {
+            "prompt": prompt,
+            "duration": str(duration),
+            "aspect_ratio": aspect_ratio,
+            "generate_audio": generate_audio
+        }
+
+        # 首帧/单图
+        if image_url:
+            payload["image_url"] = self._prepare_image_url(image_url)
+
+        # 多参考图
+        if image_urls:
+            payload["image_urls"] = [self._prepare_image_url(img) for img in image_urls]
+
+        # 尾帧
+        if tail_image_url:
+            payload["tail_image_url"] = self._prepare_image_url(tail_image_url)
+
+        return await self._submit_and_wait(payload, output)
+
+    def _prepare_image_url(self, image_path: str) -> str:
+        """准备图片 URL（本地文件转 data URI）"""
+        if image_path.startswith(('http://', 'https://')):
+            return image_path
+        return self._file_to_data_uri(image_path)
+
+    def _file_to_data_uri(self, file_path: str) -> str:
+        """将本地文件转为 data URI 格式的 base64"""
+        ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+        if ext == 'jpg':
+            ext = 'jpeg'
+        with open(file_path, 'rb') as f:
+            data = base64.b64encode(f.read()).decode('utf-8')
+        return f"data:image/{ext};base64,{data}"
+
+    async def _submit_and_wait(self, payload: dict, output: str = None) -> Dict[str, Any]:
+        """提交任务并等待完成"""
+        import time
+
+        logger.info(f"📤 创建 fal Kling 任务: {payload.get('prompt', '')[:50]}...")
+
+        try:
+            # 使用 fal_client 提交任务，返回 AsyncRequestHandle
+            handle = await self.fal_client.submit(self.MODEL_ID, arguments=payload)
+            request_id = handle.request_id
+            logger.info(f"✅ fal 任务已提交: {request_id}")
+        except Exception as e:
+            logger.error(f"❌ fal 任务提交失败: {e}")
+            return {"success": False, "error": str(e)}
+
+        # 等待完成
+        video_url = await self._wait_for_completion(handle)
+
+        if video_url and output:
+            await self._download_file(video_url, output)
+            return {"success": True, "video_url": video_url, "output": output, "request_id": request_id}
+
+        return {"success": bool(video_url), "video_url": video_url, "request_id": request_id}
+
+    async def _wait_for_completion(self, handle, max_wait: int = 600) -> Optional[str]:
+        """等待任务完成"""
+        import time
+
+        logger.info(f"⏳ 等待 fal 任务完成: {handle.request_id}")
+        start_time = time.monotonic()
+
+        while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed > max_wait:
+                logger.error(f"❌ fal 任务超时 ({max_wait}秒)")
+                return None
+
+            try:
+                # 使用 handle.status() 检查状态
+                status = await handle.status()
+                # status 是一个对象，如 InProgress 或 Completed
+                status_class = status.__class__.__name__
+                logger.info(f"   [{int(elapsed)}s] 状态: {status_class}")
+
+                if status_class == "Completed":
+                    # 使用 handle.get() 获取结果
+                    result = await handle.get()
+                    video_url = result.get("video", {}).get("url")
+                    if video_url:
+                        logger.info(f"✅ fal 任务完成 (耗时: {int(elapsed)}秒)")
+                        return video_url
+                    else:
+                        logger.error(f"❌ fal 任务结果中无视频URL: {result}")
+                        return None
+                elif status_class == "Failed":
+                    error = getattr(status, 'error', None) or "Unknown error"
+                    logger.error(f"❌ fal 任务失败: {error}")
+                    return None
+            except Exception as e:
+                logger.warning(f"   查询状态异常: {e}")
+
+            await asyncio.sleep(5)
+
+    async def _download_file(self, url: str, output_path: str):
+        """下载文件"""
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        response = await self.http_client.get(url)
+        with open(output_path, 'wb') as f:
+            f.write(response.content)
+        logger.info(f"✅ 已保存到: {output_path}")
+
+    async def close(self):
+        await self.http_client.aclose()
+
+
 class SunoClient:
     """Suno 音乐生成客户端"""
 
@@ -1801,6 +1967,7 @@ async def cmd_vision(args):
 
 async def cmd_video(args):
     """视频生成命令"""
+    provider = getattr(args, 'provider', 'kling')
     backend = getattr(args, 'backend', 'kling')
 
     # 优先级：命令行 > storyboard.json > 默认值
@@ -1813,6 +1980,44 @@ async def cmd_video(args):
         aspect_ratio = "9:16"  # 最终默认值
         logger.info(f"📐 使用默认宽高比: {aspect_ratio}")
 
+    # ==================== fal.ai provider ====================
+    # fal 使用统一的 Kling 模型，参数和 prompt 写法与官方完全一致
+    if provider == 'fal':
+        if not Config.FAL_API_KEY:
+            print(json.dumps({
+                "success": False,
+                "error": "FAL_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 FAL_API_KEY",
+                "get_key": "访问 https://fal.ai 获取 API key"
+            }, indent=2, ensure_ascii=False))
+            return 1
+
+        client = FalKlingClient()
+        try:
+            generate_audio = args.audio if hasattr(args, 'audio') else False
+            duration = max(3, min(15, args.duration))
+
+            result = await client.create_video(
+                prompt=args.prompt,
+                duration=duration,
+                aspect_ratio=aspect_ratio,
+                generate_audio=generate_audio,
+                image_url=args.image if args.image else None,
+                image_urls=getattr(args, 'image_list', None),
+                tail_image_url=getattr(args, 'tail_image', None),
+                output=args.output
+            )
+
+            if result.get("success"):
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+                return 0
+            else:
+                print(f"错误: {result.get('error')}")
+                return 1
+        finally:
+            await client.close()
+
+    # ==================== kling provider (官方 API) ====================
     # BackendRouter: 按功能需求强制切换（image-list 只有 omni 支持，tail-image 只有 kling 支持）
     image_list = getattr(args, 'image_list', None)
     tail_image = getattr(args, 'tail_image', None)
@@ -2175,6 +2380,11 @@ async def cmd_check(args):
             "purpose": "Kling 视频生成 Secret Key",
             "get_key": "https://klingai.kuaishou.com"
         },
+        "FAL_API_KEY": {
+            "value": Config.FAL_API_KEY,
+            "purpose": "fal.ai Kling 视频生成代理（绕过官方并发限制）",
+            "get_key": "https://fal.ai"
+        },
         "SUNO_API_KEY": {
             "value": Config.SUNO_API_KEY,
             "purpose": "Suno 音乐生成",
@@ -2226,6 +2436,8 @@ def main():
     video_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径，自动读取 aspect_ratio")
     video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
+    video_parser.add_argument("--provider", choices=["kling", "fal"], default="kling",
+                              help="API 提供商 (kling=官方API, fal=fal.ai代理，参数和prompt写法与官方完全一致)")
     video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni"], default="kling",
                               help="视频生成后端 (默认 kling; vidu 为兜底; kling-omni 用于参考图)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro"], default="std",
