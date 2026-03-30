@@ -1,5 +1,5 @@
 ---
-name: vico-edit
+name: video-gen
 description: AI视频剪辑工具。分析素材、生成创意、设计分镜、执行剪辑。支持Vidu/Kling/Kling Omni视频生成、Suno音乐生成、TTS配音、FFmpeg剪辑。当用户要求制作视频、剪辑视频、生成视频、创建短片、或提供素材目录要求生成作品时触发。
 argument-hint: <素材目录或视频文件>
 ---
