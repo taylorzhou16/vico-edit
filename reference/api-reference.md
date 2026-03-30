@@ -1,46 +1,46 @@
 # API 工具参考
 
-## vico_tools.py - API 工具
+## video_gen_tools.py - API 工具
 
 ```bash
 # 环境检查
-python ~/.claude/skills/vico-edit/vico_tools.py check
+python ~/.claude/skills/video-gen/video_gen_tools.py check
 
 # 视频生成（Kling 后端，默认）
-python ~/.claude/skills/vico-edit/vico_tools.py video --prompt <描述> --duration 5 --output <输出>
-python ~/.claude/skills/vico-edit/vico_tools.py video --image <首帧图> --prompt <描述> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_tools.py video --prompt <描述> --duration 5 --output <输出>
+python ~/.claude/skills/video-gen/video_gen_tools.py video --image <首帧图> --prompt <描述> --output <输出>
 
 # 视频生成（Vidu 后端 - 兜底/快速原型）
-python ~/.claude/skills/vico-edit/vico_tools.py video --image <图片> --prompt <描述> --backend vidu --duration <秒> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_tools.py video --image <图片> --prompt <描述> --backend vidu --duration <秒> --output <输出>
 
 # Kling 首尾帧控制
-python ~/.claude/skills/vico-edit/vico_tools.py video --image <首帧图> --tail-image <尾帧图> --prompt "动作描述" --backend kling --duration 5
+python ~/.claude/skills/video-gen/video_gen_tools.py video --image <首帧图> --tail-image <尾帧图> --prompt "动作描述" --backend kling --duration 5
 
 # Kling 多镜头模式
-python ~/.claude/skills/vico-edit/vico_tools.py video --prompt "故事描述" --backend kling --multi-shot --shot-type intelligence --duration 10
-python ~/.claude/skills/vico-edit/vico_tools.py video --prompt "总体描述" --backend kling --multi-shot --shot-type customize --multi-prompt '[{"index":1,"prompt":"镜头1描述","duration":"3"},{"index":2,"prompt":"镜头2描述","duration":"4"}]' --duration 7
+python ~/.claude/skills/video-gen/video_gen_tools.py video --prompt "故事描述" --backend kling --multi-shot --shot-type intelligence --duration 10
+python ~/.claude/skills/video-gen/video_gen_tools.py video --prompt "总体描述" --backend kling --multi-shot --shot-type customize --multi-prompt '[{"index":1,"prompt":"镜头1描述","duration":"3"},{"index":2,"prompt":"镜头2描述","duration":"4"}]' --duration 7
 
 # 视频生成（Kling Omni 后端 - 参考图模式）
-python ~/.claude/skills/vico-edit/vico_tools.py video --backend kling-omni --prompt "人物 <<<image_1>>> 在场景中" --image-list <参考图> --duration 5 --output <输出>
+python ~/.claude/skills/video-gen/video_gen_tools.py video --backend kling-omni --prompt "人物 <<<image_1>>> 在场景中" --image-list <参考图> --duration 5 --output <输出>
 
 # Kling Omni 多参考图 + 多镜头
-python ~/.claude/skills/vico-edit/vico_tools.py video --backend kling-omni --prompt "故事" --image-list <参考图1> <参考图2> --multi-shot --shot-type customize --multi-prompt '[{"index":1,"prompt":"<<<image_1>>> 镜头1","duration":"3"}]' --duration 7
+python ~/.claude/skills/video-gen/video_gen_tools.py video --backend kling-omni --prompt "故事" --image-list <参考图1> <参考图2> --multi-shot --shot-type customize --multi-prompt '[{"index":1,"prompt":"<<<image_1>>> 镜头1","duration":"3"}]' --duration 7
 
 # 自动后端选择（提供 --image-list 自动用 kling-omni，提供 --tail-image 自动用 kling）
-python ~/.claude/skills/vico-edit/vico_tools.py video --prompt "<<<image_1>>> 在赛场" --image-list ref.jpg --output out.mp4
+python ~/.claude/skills/video-gen/video_gen_tools.py video --prompt "<<<image_1>>> 在赛场" --image-list ref.jpg --output out.mp4
 
 # 音乐生成
-python ~/.claude/skills/vico-edit/vico_tools.py music --prompt <描述> --style <风格> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_tools.py music --prompt <描述> --style <风格> --output <输出>
 
 # TTS 语音
-python ~/.claude/skills/vico-edit/vico_tools.py tts --text <文本> --voice <音色> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_tools.py tts --text <文本> --voice <音色> --output <输出>
 
 # 图片生成
-python ~/.claude/skills/vico-edit/vico_tools.py image --prompt <描述> --style <风格> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_tools.py image --prompt <描述> --style <风格> --output <输出>
 
 # 图片分析（内置多模态能力）
-python ~/.claude/skills/vico-edit/vico_tools.py vision <图片路径> [--prompt "分析提示词"]
-python ~/.claude/skills/vico-edit/vico_tools.py vision <目录路径> --batch [--prompt "分析提示词"]
+python ~/.claude/skills/video-gen/video_gen_tools.py vision <图片路径> [--prompt "分析提示词"]
+python ~/.claude/skills/video-gen/video_gen_tools.py vision <目录路径> --batch [--prompt "分析提示词"]
 ```
 
 ### Kling / Kling Omni 参数说明
@@ -60,20 +60,20 @@ python ~/.claude/skills/vico-edit/vico_tools.py vision <目录路径> --batch [-
 
 ---
 
-## vico_editor.py - 剪辑工具
+## video_gen_editor.py - 剪辑工具
 
 ```bash
 # 拼接（自动校验分辨率 + 归一化）
-python ~/.claude/skills/vico-edit/vico_editor.py concat --inputs <视频列表> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_editor.py concat --inputs <视频列表> --output <输出>
 
 # 音频混合
-python ~/.claude/skills/vico-edit/vico_editor.py mix --video <视频> --bgm <音乐> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_editor.py mix --video <视频> --bgm <音乐> --output <输出>
 
 # 转场
-python ~/.claude/skills/vico-edit/vico_editor.py transition --inputs <视频1> <视频2> --type <类型> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_editor.py transition --inputs <视频1> <视频2> --type <类型> --output <输出>
 
 # 调色
-python ~/.claude/skills/vico-edit/vico_editor.py color --video <视频> --preset <预设> --output <输出>
+python ~/.claude/skills/video-gen/video_gen_editor.py color --video <视频> --preset <预设> --output <输出>
 ```
 
 **转场类型**：fade | dissolve | wipeleft | wiperight | wipeup | wipedown | slideleft | slideright | slideup | slidedown | circleopen | circleclose | pixelize | hblur

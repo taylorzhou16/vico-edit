@@ -111,7 +111,7 @@
 只传角色参考图，不生成分镜图：
 
 ```bash
-python vico_tools.py video \
+python video_gen_tools.py video \
   --backend kling-omni \
   --prompt "人物 <<<image_1>>> 在咖啡馆窗边坐下，微笑着看向窗外" \
   --image-list /path/to/person_ref.jpg \
@@ -123,7 +123,7 @@ python vico_tools.py video \
 **Step 1**: 生成分镜图
 
 ```bash
-python vico_tools.py image \
+python video_gen_tools.py image \
   --prompt "Cinematic realistic start frame.\nReferencing the facial features...\nScene: 男洗手间门口...\nLighting: 冷白色荧光..." \
   --reference /path/to/person_ref.jpg \
   --output generated/frames/{shot_id}_frame.png
@@ -132,7 +132,7 @@ python vico_tools.py image \
 **Step 2**: 分镜图 + 角色参考图一起传入 Omni
 
 ```bash
-python vico_tools.py video \
+python video_gen_tools.py video \
   --backend kling-omni \
   --prompt "Referencing the composition, characters interact in the scene..." \
   --image-list generated/frames/{shot_id}_frame.png /path/to/person_ref.jpg \
@@ -144,7 +144,7 @@ python vico_tools.py video \
 ### Omni 多参考图 + multi_shot
 
 ```bash
-python vico_tools.py video --backend kling-omni \
+python video_gen_tools.py video --backend kling-omni \
   --prompt "故事" \
   --image-list frame.png ref1.jpg ref2.jpg \
   --multi-shot --shot-type customize \
@@ -186,7 +186,7 @@ python vico_tools.py video --backend kling-omni \
 **Step 1**：Gemini 基于参考图生成分镜图
 
 ```bash
-python vico_tools.py image \
+python video_gen_tools.py image \
   --prompt "小美（25岁亚洲女性，黑色长直发，瓜子脸）坐在咖啡馆窗边，抬头微笑，下午阳光，电影感，竖屏9:16构图" \
   --reference <参考图路径> \
   --output generated/storyboard/scene1_shot2_frame.png
@@ -195,7 +195,7 @@ python vico_tools.py image \
 **Step 2**：分镜图做 img2video
 
 ```bash
-python vico_tools.py video \
+python video_gen_tools.py video \
   --image generated/storyboard/scene1_shot2_frame.png \
   --prompt "小美抬头看向服务生，温柔微笑着说：'这里真的很安静，我很喜欢。'" \
   --backend kling --audio \
@@ -207,7 +207,7 @@ python vico_tools.py video \
 **Step 1**：Gemini 多参考图合成一张分镜图（**参考图顺序很重要，重要人物放后面**）
 
 ```bash
-python vico_tools.py image \
+python video_gen_tools.py image \
   --prompt "小美和小明并肩走在街道上，温暖的金色光线，竖屏9:16构图" \
   --reference <次要人物参考图> <主要人物参考图> \
   --output generated/storyboard/scene2_shot1_frame.png

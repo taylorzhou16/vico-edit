@@ -3,10 +3,10 @@
 Vico Tools - 视频创作API命令行工具集
 
 用法：
-  python vico_tools.py video --image <path> --prompt <text> --duration <seconds>
-  python vico_tools.py music --prompt <text> --style <style>
-  python vico_tools.py tts --text <text> --voice <voice_type>
-  python vico_tools.py image --prompt <text> --style <style>
+  python video_gen_tools.py video --image <path> --prompt <text> --duration <seconds>
+  python video_gen_tools.py music --prompt <text> --style <style>
+  python video_gen_tools.py tts --text <text> --voice <voice_type>
+  python video_gen_tools.py image --prompt <text> --style <style>
 """
 
 import argparse
@@ -126,7 +126,7 @@ def validate_and_resize_image(
 
 # ============== 配置管理 ==============
 
-CONFIG_FILE = Path.home() / ".claude" / "skills" / "vico-edit" / "config.json"
+CONFIG_FILE = Path.home() / ".claude" / "skills" / "video-gen" / "config.json"
 
 
 def load_config() -> Dict[str, str]:

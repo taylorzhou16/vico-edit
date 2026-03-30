@@ -7,22 +7,22 @@
 **核心理念**：Claude 本身就是 Director Agent，不需要额外的 Agent 代码。
 
 ```
-~/.claude/skills/vico-edit/
+~/.claude/skills/video-gen/
 ├── SKILL.md                # 核心工作流指令（~290 行）
 ├── reference/
 │   ├── storyboard-spec.md  # 分镜设计完整规范
 │   ├── backend-guide.md    # 后端选择与参考图策略
 │   ├── prompt-guide.md     # Prompt 编写与一致性规范
 │   └── api-reference.md    # CLI 参数与环境变量
-├── vico_tools.py           # API 工具（视频/音乐/TTS/图片生成）
-├── vico_editor.py          # FFmpeg 剪辑工具
+├── video_gen_tools.py           # API 工具（视频/音乐/TTS/图片生成）
+├── video_gen_editor.py          # FFmpeg 剪辑工具
 └── config.json             # API 密钥配置
 ```
 
 **职责划分**：
 - **Claude**：意图识别、创意生成、分镜设计、工作流规划
-- **vico_tools.py**：Vidu/Kling/Suno/TTS/Gemini API 调用
-- **vico_editor.py**：FFmpeg 视频剪辑操作
+- **video_gen_tools.py**：Vidu/Kling/Suno/TTS/Gemini API 调用
+- **video_gen_editor.py**：FFmpeg 视频剪辑操作
 
 ## ✨ 功能
 
@@ -57,17 +57,17 @@
 
 这个项目的本意是希望充分发挥 Claude Code Agent 的智能能力，给足视频生成相关的所有工具和能力，探索 AI 辅助视频创作的实际效果。**这是一个偏探索性质的项目，仍在不断更新迭代中。** 欢迎尝试各种创意，你的使用反馈将帮助我们持续改进。
 
-**灵活的 API 支持**：项目中使用的图片和视频生成 API（如 Vidu、Gemini）可以自行替换为你熟悉的渠道。`vico_tools.py` 中的 API 调用封装清晰，方便接入其他服务商（如 OpenAI、Midjourney、Stability AI 等）。
+**灵活的 API 支持**：项目中使用的图片和视频生成 API（如 Vidu、Gemini）可以自行替换为你熟悉的渠道。`video_gen_tools.py` 中的 API 调用封装清晰，方便接入其他服务商（如 OpenAI、Midjourney、Stability AI 等）。
 
 ## 🚀 安装
 
 ```bash
 # 复制整个目录到 skills 目录
-mkdir -p ~/.claude/skills/vico-edit
-cp -r SKILL.md reference/ vico_tools.py vico_editor.py config.json.example README.md requirements.txt ~/.claude/skills/vico-edit/
+mkdir -p ~/.claude/skills/video-gen
+cp -r SKILL.md reference/ video_gen_tools.py video_gen_editor.py config.json.example README.md requirements.txt ~/.claude/skills/video-gen/
 
 # 安装依赖
-cd ~/.claude/skills/vico-edit && pip install -r requirements.txt
+cd ~/.claude/skills/video-gen && pip install -r requirements.txt
 
 # 配置 API 密钥
 cp config.json.example config.json
@@ -77,49 +77,49 @@ cp config.json.example config.json
 ## 📖 使用方法
 
 ```
-/vico-edit <素材目录>
+/video-gen <素材目录>
 ```
 
 ### 示例
 
 ```bash
 # 完整创作流程
-/vico-edit ~/Videos/旅行素材/
+/video-gen ~/Videos/旅行素材/
 
 # 继续上次的项目
-/vico-edit ~/vico-projects/trip_20260310/
+/video-gen ~/video-gen-projects/trip_20260310/
 ```
 
 ## 🛠️ 工具调用
 
-### vico_tools.py
+### video_gen_tools.py
 
 ```bash
 # 视频生成（Kling 后端，默认）
-python vico_tools.py video --prompt "<描述>" --duration 5 --output video.mp4
-python vico_tools.py video --image <首帧图> --prompt "<描述>" --output video.mp4
+python video_gen_tools.py video --prompt "<描述>" --duration 5 --output video.mp4
+python video_gen_tools.py video --image <首帧图> --prompt "<描述>" --output video.mp4
 
 # 视频生成（Kling Omni 后端 - 参考图模式）
-python vico_tools.py video --backend kling-omni --prompt "<<<image_1>>> 在场景中" --image-list <参考图> --output video.mp4
+python video_gen_tools.py video --backend kling-omni --prompt "<<<image_1>>> 在场景中" --image-list <参考图> --output video.mp4
 
 # 视频生成（Vidu 后端 - 兜底/快速原型）
-python vico_tools.py video --backend vidu --image <图片> --prompt "<描述>" --duration 5 --output video.mp4
+python video_gen_tools.py video --backend vidu --image <图片> --prompt "<描述>" --duration 5 --output video.mp4
 
 # Kling 多镜头模式
-python vico_tools.py video --prompt "<故事描述>" --multi-shot --shot-type intelligence --duration 10
-python vico_tools.py video --prompt "<总体描述>" --multi-shot --shot-type customize --multi-prompt '[{"index":1,"prompt":"镜头1","duration":"3"}]' --duration 5
+python video_gen_tools.py video --prompt "<故事描述>" --multi-shot --shot-type intelligence --duration 10
+python video_gen_tools.py video --prompt "<总体描述>" --multi-shot --shot-type customize --multi-prompt '[{"index":1,"prompt":"镜头1","duration":"3"}]' --duration 5
 
 # Kling 首尾帧控制
-python vico_tools.py video --image <首帧图> --tail-image <尾帧图> --prompt "<动作描述>" --duration 5
+python video_gen_tools.py video --image <首帧图> --tail-image <尾帧图> --prompt "<动作描述>" --duration 5
 
 # 音乐生成
-python vico_tools.py music --prompt "<描述>" --style "Lo-fi" --output music.mp3
+python video_gen_tools.py music --prompt "<描述>" --style "Lo-fi" --output music.mp3
 
 # TTS
-python vico_tools.py tts --text "<文本>" --voice female_narrator --output audio.mp3
+python video_gen_tools.py tts --text "<文本>" --voice female_narrator --output audio.mp3
 
 # 图片生成
-python vico_tools.py image --prompt "<描述>" --style cinematic --output image.png
+python video_gen_tools.py image --prompt "<描述>" --style cinematic --output image.png
 ```
 
 ### 🎥 视频生成后端对比
@@ -138,26 +138,26 @@ python vico_tools.py image --prompt "<描述>" --style cinematic --output image.
 - 虚构片/短剧、MV → **Kling Omni**（角色一致性）
 - Vlog/写实类、广告片（有真实素材）→ **Kling 或 Vidu**（首帧控制）
 
-### vico_editor.py
+### video_gen_editor.py
 
 ```bash
 # 拼接
-python vico_editor.py concat --inputs v1.mp4 v2.mp4 --output out.mp4
+python video_gen_editor.py concat --inputs v1.mp4 v2.mp4 --output out.mp4
 
 # 字幕
-python vico_editor.py subtitle --video video.mp4 --srt subs.srt --output out.mp4
+python video_gen_editor.py subtitle --video video.mp4 --srt subs.srt --output out.mp4
 
 # 音频混合
-python vico_editor.py mix --video video.mp4 --bgm music.mp3 --output out.mp4
+python video_gen_editor.py mix --video video.mp4 --bgm music.mp3 --output out.mp4
 
 # 转场
-python vico_editor.py transition --inputs v1.mp4 v2.mp4 --type fade --output out.mp4
+python video_gen_editor.py transition --inputs v1.mp4 v2.mp4 --type fade --output out.mp4
 
 # 调色
-python vico_editor.py color --video video.mp4 --preset warm --output out.mp4
+python video_gen_editor.py color --video video.mp4 --preset warm --output out.mp4
 
 # 变速
-python vico_editor.py speed --video video.mp4 --rate 1.5 --output out.mp4
+python video_gen_editor.py speed --video video.mp4 --rate 1.5 --output out.mp4
 ```
 
 ## 🔑 环境变量
@@ -189,7 +189,7 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 ## 📁 输出目录结构
 
 ```
-~/vico-projects/{project_name}_{timestamp}/
+~/video-gen-projects/{project_name}_{timestamp}/
 ├── state.json              # 项目状态
 ├── materials/              # 原始素材
 ├── analysis/               # 分析结果
@@ -256,8 +256,8 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 
 #### 修复
 - 🐛 **硬编码默认值问题** — CLI 参数应优先从 storyboard.json 读取
-  - `vico_editor.py`: concat/image 命令添加 `--storyboard` 参数
-  - `vico_tools.py`: video/image 添加 `--storyboard`，music 添加 `--creative` 参数
+  - `video_gen_editor.py`: concat/image 命令添加 `--storyboard` 参数
+  - `video_gen_tools.py`: video/image 添加 `--storyboard`，music 添加 `--creative` 参数
   - 统一 KlingClient/KlingOmniClient 默认 aspect_ratio 为 `"9:16"`
 
 #### 改进
@@ -294,7 +294,7 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 - ✨ **Phase 2 角色参考图收集**
   - 新增问题 6：角色参考图来源选择
   - 支持三种方式：AI 生成 / 用户上传 / 纯文字生成
-  - 自动调用 `vico_tools.py image` 生成标准角色参考图
+  - 自动调用 `video_gen_tools.py image` 生成标准角色参考图
 
 - ✨ **Phase 3 自动后端选择**
   - 有参考图 + 多镜头人物 → `kling-omni` (角色一致性最佳)

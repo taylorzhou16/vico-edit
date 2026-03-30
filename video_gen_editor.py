@@ -3,12 +3,12 @@
 Vico Editor - FFmpeg 视频剪辑命令行工具
 
 用法：
-  python vico_editor.py concat --inputs <video1> <video2> --output <output.mp4>
-  python vico_editor.py subtitle --video <video> --srt <subtitle.srt> --output <output.mp4>
-  python vico_editor.py mix --video <video> --bgm <music.mp3> --output <output.mp4>
-  python vico_editor.py transition --inputs <video1> <video2> --type fade --output <output.mp4>
-  python vico_editor.py color --video <video> --preset warm --output <output.mp4>
-  python vico_editor.py speed --video <video> --rate 1.5 --output <output.mp4>
+  python video_gen_editor.py concat --inputs <video1> <video2> --output <output.mp4>
+  python video_gen_editor.py subtitle --video <video> --srt <subtitle.srt> --output <output.mp4>
+  python video_gen_editor.py mix --video <video> --bgm <music.mp3> --output <output.mp4>
+  python video_gen_editor.py transition --inputs <video1> <video2> --type fade --output <output.mp4>
+  python video_gen_editor.py color --video <video> --preset warm --output <output.mp4>
+  python video_gen_editor.py speed --video <video> --rate 1.5 --output <output.mp4>
 """
 
 import argparse
