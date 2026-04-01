@@ -466,7 +466,8 @@ async def mix_audio(
 
     # 混合所有音频
     mix_inputs = "".join([f"[a{i}]" for i in range(input_idx)])
-    filter_parts.append(f"{mix_inputs}amix=inputs={input_idx}:duration=first:dropout_transition=2[aout]")
+    # normalize=0: 禁止FFmpeg自动均一化，保留原始音量比例
+    filter_parts.append(f"{mix_inputs}amix=inputs={input_idx}:duration=first:dropout_transition=2:normalize=0[aout]")
 
     filter_complex = ";".join(filter_parts)
 

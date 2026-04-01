@@ -209,6 +209,34 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 
 ## 📋 更新日志
 
+### v1.4.2 (2026-04-01)
+🔊 **音频混音修复与规范化**
+
+#### Bug 修复
+- 🐛 **FFmpeg amix normalize=0** — 禁止自动均一化，保留原始音量比例，修复旁白被压低问题
+
+#### 新增功能
+- ✨ **混音规则文档** — SKILL.md Phase 5 新增「音频混音规则」章节
+  - 音量推荐值：视频环境声 0.8、旁白 1.5-2.0、BGM 0.1-0.15
+  - 视频类型适配：MV → 0.5-0.7、Vlog → 0.1-0.15、电影感 → 0.2-0.3
+
+#### 文件变更
+- 📝 `video_gen_editor.py` — mix_audio() 函数添加 normalize=0（第 470 行）
+- 📝 `SKILL.md` — Phase 5 新增音频混音规则章节
+
+### v1.4.1 (2026-03-31)
+🎤 **旁白分段规划功能**
+
+#### 新增功能
+- ✨ **Phase 2 旁白需求判断** — 根据视频类型推荐是否需要旁白（纪录片/Vlog 通常需要，电影感/虚构片通常不需要）
+- ✨ **Phase 3 同步设计旁白** — 生成分镜时同步规划 `narration_segments`，按镜头时间点分段
+- ✨ **Phase 4 旁白生成** — 视频/音乐生成后新增 TTS 旁白生成步骤（火山引擎）
+- ✨ **Phase 5 旁白插入** — 按 `overall_time_range` 时间点将旁白音频配到正确位置
+
+#### 文档更新
+- 📝 `storyboard-spec.md` — 新增 `narration_config` 和 `narration_segments` 字段规范
+- 📝 `prompt-guide.md` — 新增 TTS 旁白生成流程和参数说明
+
 ### v1.4.0 (2026-03-30)
 🎬 **视频生成最佳实践重构**
 
