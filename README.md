@@ -212,6 +212,36 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 
 ## 📋 更新日志
 
+### v1.4.6 (2026-04-02)
+🔧 **API 字段名修复**
+
+#### Bug 修复
+- 🐛 **FalKlingClient 字段名修正** — 使用 fal.ai 官方正确的字段名
+  - `image_url` → `start_image_url`（首帧控制）
+  - `tail_image_url` → `end_image_url`（尾帧控制）
+- 🐛 **YunwuKlingOmniClient 参数修正**
+  - `audio` 布尔值 → `sound: "on"/"off"` 字符串
+  - `_file_to_base64()` 返回纯 base64 而非 data URI 格式
+
+#### 测试验证
+- ✅ 文生视频（纯 prompt）
+- ✅ 首帧生视频（start_image_url，角色保持正确）
+- ✅ 多参考图生视频（image_urls + @Image1/@Image2，带音频）
+
+### v1.4.5 (2026-04-02)
+📝 **文档补充**
+
+- 补充 v1.4.4 版本遗漏的 yunwu provider 文档说明
+
+### v1.4.4 (2026-04-02)
+📚 **Yunwu Provider 文档增强**
+
+#### 文档更新
+- 📝 `api-reference.md` — YUNWU_API_KEY 作用范围扩展，支持 Kling/Kling-Omni
+- 📝 `backend-guide.md` — 新增 Provider 选择优先级说明
+- 📝 `README.md` — 新增 Kling 可使用 Yunwu 作为官方 API 备用
+- 📝 `SKILL.md` — 新增 Provider 选择章节，说明如何绕过并发限制
+
 ### v1.4.3 (2026-04-02)
 🔌 **Yunwu Kling Provider 支持**
 
