@@ -86,7 +86,7 @@ python ~/.claude/skills/video-gen/video_gen_editor.py color --video <视频> --p
 
 | 变量 | 用途 | 何时需要 |
 |------|------|---------|
-| YUNWU_API_KEY | Vidu 视频生成 + Gemini 图片生成 | 生成视频/图片时 |
+| YUNWU_API_KEY | Vidu/Kling/Kling-Omni 视频生成 + Gemini 图片生成 | 生成视频/图片时（可作为 Kling 官方 API 的备用） |
 | KLING_ACCESS_KEY | Kling 视频生成 Access Key | 使用 Kling/Kling Omni 时 |
 | KLING_SECRET_KEY | Kling 视频生成 Secret Key | 使用 Kling/Kling Omni 时 |
 | SUNO_API_KEY | Suno 音乐生成 | 生成 BGM 时 |

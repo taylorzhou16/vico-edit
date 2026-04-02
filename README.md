@@ -178,7 +178,10 @@ export VOLCENGINE_TTS_APP_ID="your-app-id"
 export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 ```
 
-**注意**：Gemini 图片生成也走 Yunwu API，使用同一个 YUNWU_API_KEY。也可使用 `config.json` 配置（推荐）。
+**注意**：
+- Gemini 图片生成走 Yunwu API
+- Kling/Kling-Omni 视频生成可通过 `--provider yunwu` 使用 Yunwu API（作为官方 API 的备用）
+- 使用同一个 YUNWU_API_KEY
 
 ## 🔄 工作流程
 

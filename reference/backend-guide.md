@@ -71,6 +71,33 @@
 - 提供 `--tail-image` → 保持 kling（唯一支持）
 - 需要快速兜底 → 手动指定 `--backend vidu`
 
+### Provider 选择优先级
+
+当未指定 `--provider` 时，按以下优先级自动选择：
+
+| 条件 | Provider | 说明 |
+|------|----------|------|
+| 有 KLING_ACCESS_KEY + KLING_SECRET_KEY | `official` | Kling 官方 API |
+| 有 YUNWU_API_KEY | `yunwu` | yunwu.ai 代理 |
+| 有 FAL_API_KEY | `fal` | fal.ai 代理 |
+
+**手动指定 provider**：
+
+```bash
+# 使用 yunwu 代理（绕过官方 API 并发限制）
+python video_gen_tools.py video --provider yunwu --backend kling-omni --image-list ref.jpg ...
+
+# 使用 fal.ai 代理
+python video_gen_tools.py video --provider fal --backend kling-omni --image-list ref.jpg ...
+```
+
+**yunwu vs fal 对比**：
+
+| Provider | 支持后端 | 优势 | 适用场景 |
+|----------|---------|------|---------|
+| `yunwu` | vidu, kling, kling-omni | 支持全系列、国内访问 | 官方 API 不可用时的首选备用 |
+| `fal` | kling-omni | 国际访问稳定 | 仅需 kling-omni 时的备选 |
+
 ---
 
 ## 人物参考图两条路径

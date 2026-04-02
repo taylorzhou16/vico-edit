@@ -18,6 +18,20 @@ argument-hint: <素材目录或视频文件>
 
 非多模态模型会自动调用视觉模型进行图片分析，在 `config.json` 中配置 `VISION_BASE_URL`、`VISION_MODEL`、`VISION_API_KEY`。
 
+### Provider 选择
+
+当 Kling 官方 API 遇到并发限制（429）时，可使用 `--provider yunwu` 或 `--provider fal`：
+
+```bash
+# yunwu 代理（支持 Vidu/Kling/Kling-Omni 全系列）
+python video_gen_tools.py video --provider yunwu --backend kling-omni --image-list ref.jpg ...
+
+# fal.ai 代理（仅支持 kling-omni）
+python video_gen_tools.py video --provider fal --backend kling-omni --image-list ref.jpg ...
+```
+
+**Provider 自动选择优先级**：官方 API → yunwu → fal
+
 ---
 
 ## 核心理念
