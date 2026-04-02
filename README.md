@@ -209,6 +209,27 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 
 ## 📋 更新日志
 
+### v1.4.3 (2026-04-02)
+🔌 **Yunwu Kling Provider 支持**
+
+#### 新增功能
+- ✨ **YunwuKlingClient** — 新增 yunwu kling-v3 客户端，支持 text2video、img2video、multi_shot、首尾帧控制、audio
+- ✨ **YunwuKlingOmniClient** — 新增 yunwu kling-v3-omni 客户端，支持 omni-video、image_list 多参考图、multi_shot、audio
+- ✨ **--provider 参数** — 新增 provider 选择（official/yunwu/fal），支持同一 backend 切换不同 provider
+- ✨ **Provider 自动选择** — 未指定时按优先级自动选择：official > yunwu > fal
+
+#### 架构优化
+- 🔄 **Backend/Provider 分离** — backend 选择功能（vidu/kling/kling-omni），provider 选择服务源（official/yunwu/fal）
+- 📝 **功能支持矩阵** — 明确各 provider 的功能支持情况（multi_shot、首尾帧、audio 等）
+
+#### API 差异处理
+- 🔧 **Yunwu kling-v3 使用 `model` 参数**（官方 API 用 `model_name`）
+- 🔧 **Yunwu kling-v3-omni 使用 `model_name` 参数**（与官方 API 相同）
+- 🔧 **视频 URL 解析路径** — `data.task_result.videos[0].url`（非 `task_info`）
+
+#### 文件变更
+- 📝 `video_gen_tools.py` — 新增 YunwuKlingClient、YunwuKlingOmniClient，修改 cmd_video 函数
+
 ### v1.4.2 (2026-04-01)
 🔊 **音频混音修复与规范化**
 

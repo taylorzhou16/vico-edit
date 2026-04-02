@@ -464,6 +464,502 @@ class ViduClient:
         await self.client.aclose()
 
 
+# ============== Yunwu Kling 视频生成 ==============
+
+class YunwuKlingClient:
+    """
+    Kling v3 视频生成客户端（通过 Yunwu API）
+
+    只支持 kling-v3 模型，用于 text2video 和 img2video。
+
+    与官方 API 的关键差异：
+    - 使用 `model` 参数而非 `model_name`
+    - Bearer Token 认证（复用 YUNWU_API_KEY）
+    - Base URL: https://yunwu.ai
+    """
+
+    TEXT2VIDEO_PATH = "/kling/v1/videos/text2video"
+    IMAGE2VIDEO_PATH = "/kling/v1/videos/image2video"
+    QUERY_PATH = "/kling/v1/videos/text2video/{task_id}"
+
+    MODEL = "kling-v3"  # 固定使用 kling-v3
+
+    def __init__(self):
+        import httpx
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0, connect=10.0),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
+        self.base_url = Config.YUNWU_BASE_URL  # https://yunwu.ai
+
+    async def create_text2video(
+        self,
+        prompt: str,
+        duration: int = 5,
+        mode: str = "std",
+        aspect_ratio: str = "9:16",
+        audio: bool = False,
+        multi_shot: bool = False,
+        shot_type: str = None,
+        multi_prompt: List[Dict] = None,
+        output: str = None
+    ) -> Dict[str, Any]:
+        """
+        文生视频
+
+        Args:
+            prompt: 视频描述
+            duration: 时长（3-15秒）
+            mode: std 或 pro
+            aspect_ratio: 宽高比 (16:9, 9:16, 1:1)
+            audio: 是否生成音频
+            multi_shot: 是否多镜头
+            shot_type: intelligence（AI自动分镜）或 customize（自定义分镜）
+            multi_prompt: 自定义分镜的镜头列表
+            output: 输出文件路径
+        """
+        payload = {
+            "model": self.MODEL,  # 注意：yunwu kling-v3 用 model 而非 model_name
+            "prompt": prompt,
+            "duration": str(duration),
+            "mode": mode,
+            "audio": audio,
+            "aspect_ratio": aspect_ratio
+        }
+
+        if multi_shot:
+            payload["multi_shot"] = True
+            if shot_type:
+                payload["shot_type"] = shot_type
+            if multi_prompt and shot_type == "customize":
+                payload["multi_prompt"] = multi_prompt
+
+        logger.info(f"📤 创建 Yunwu Kling 文生视频任务: {prompt[:50]}...")
+
+        try:
+            response = await self.client.post(
+                f"{self.base_url}{self.TEXT2VIDEO_PATH}",
+                json=payload,
+                headers={"Authorization": f"Bearer {Config.YUNWU_API_KEY}"}
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            code = result.get("code")
+            if code != 0:
+                return {"success": False, "error": result.get("message", f"API error: {code}")}
+
+            data = result.get("data", {})
+            task_id = data.get("task_id")
+            if not task_id:
+                return {"success": False, "error": "API未返回task_id"}
+
+            logger.info(f"✅ 任务已创建: {task_id}")
+
+            video_url = await self._wait_for_completion(task_id, "text2video")
+
+            if video_url and output:
+                await self._download_file(video_url, output)
+                return {"success": True, "video_url": video_url, "output": output, "task_id": task_id}
+
+            return {"success": True, "video_url": video_url, "task_id": task_id}
+
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg:
+                error_msg = "并发任务数超限，请等待现有任务完成后再试"
+            logger.error(f"❌ Yunwu Kling 文生视频失败: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+    async def create_image2video(
+        self,
+        image_path: str,
+        prompt: str,
+        duration: int = 5,
+        mode: str = "std",
+        audio: bool = False,
+        image_tail: str = None,
+        output: str = None
+    ) -> Dict[str, Any]:
+        """
+        图生视频（支持首尾帧控制）
+
+        Args:
+            image_path: 图片路径或URL
+            prompt: 视频描述
+            duration: 时长（3-15秒）
+            mode: std 或 pro
+            audio: 是否生成音频
+            image_tail: 尾帧图片路径或URL
+            output: 输出文件路径
+        """
+        # 准备图片
+        image_url = await self._prepare_image(image_path)
+
+        payload = {
+            "model": self.MODEL,
+            "image": image_url,
+            "prompt": prompt,
+            "duration": str(duration),
+            "mode": mode,
+            "audio": audio
+        }
+
+        # 首尾帧控制
+        if image_tail:
+            tail_url = await self._prepare_image(image_tail)
+            payload["image_tail"] = tail_url
+
+        logger.info(f"📤 创建 Yunwu Kling 图生视频任务: {prompt[:50]}...")
+
+        try:
+            response = await self.client.post(
+                f"{self.base_url}{self.IMAGE2VIDEO_PATH}",
+                json=payload,
+                headers={"Authorization": f"Bearer {Config.YUNWU_API_KEY}"}
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            code = result.get("code")
+            if code != 0:
+                return {"success": False, "error": result.get("message", f"API error: {code}")}
+
+            data = result.get("data", {})
+            task_id = data.get("task_id")
+            if not task_id:
+                return {"success": False, "error": "API未返回task_id"}
+
+            logger.info(f"✅ 任务已创建: {task_id}")
+
+            video_url = await self._wait_for_completion(task_id, "image2video")
+
+            if video_url and output:
+                await self._download_file(video_url, output)
+                return {"success": True, "video_url": video_url, "output": output, "task_id": task_id}
+
+            return {"success": True, "video_url": video_url, "task_id": task_id}
+
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"❌ Yunwu Kling 图生视频失败: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+    async def _prepare_image(self, image_path: str) -> str:
+        """准备图片（URL 或 base64）"""
+        if image_path.startswith(('http://', 'https://')):
+            return image_path
+
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"图片不存在: {image_path}")
+
+        # 验证并调整图片尺寸
+        result = validate_and_resize_image(image_path)
+        if not result["success"]:
+            raise ValueError(f"图片处理失败: {result.get('error')}")
+
+        with open(result["output_path"], 'rb') as f:
+            image_data = f.read()
+
+        base64_data = base64.b64encode(image_data).decode('utf-8')
+        ext = os.path.splitext(result["output_path"])[1].lower()
+        mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}
+        mime_type = mime_map.get(ext, 'image/jpeg')
+
+        return f"data:{mime_type};base64,{base64_data}"
+
+    async def _wait_for_completion(self, task_id: str, task_type: str = "text2video", max_wait: int = 600) -> Optional[str]:
+        """等待任务完成"""
+        import time
+        start_time = time.monotonic()
+
+        query_path = self.QUERY_PATH.replace("{task_id}", task_id)
+        if task_type == "image2video":
+            query_path = self.IMAGE2VIDEO_PATH + f"/{task_id}"
+
+        logger.info(f"⏳ 等待 Yunwu Kling 任务完成: {task_id}")
+
+        while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed > max_wait:
+                logger.error(f"❌ 任务超时 ({max_wait}秒)")
+                return None
+
+            try:
+                response = await self.client.get(
+                    f"{self.base_url}{query_path}",
+                    headers={"Authorization": f"Bearer {Config.YUNWU_API_KEY}"}
+                )
+                response.raise_for_status()
+                result = response.json()
+
+                code = result.get("code")
+                if code != 0:
+                    logger.error(f"❌ 任务查询失败: {result.get('message')}")
+                    return None
+
+                data = result.get("data", {})
+                task_status = data.get("task_status")
+
+                if task_status == "succeed":
+                    task_result = data.get("task_result", {})
+                    videos = task_result.get("videos", [])
+                    if videos:
+                        video_url = videos[0].get("url")
+                        logger.info(f"✅ 任务完成 (耗时: {int(elapsed)}秒)")
+                        return video_url
+
+                elif task_status == "failed":
+                    task_status_msg = data.get("task_status_msg", "unknown")
+                    logger.error(f"❌ 任务失败: {task_status_msg}")
+                    return None
+
+                await asyncio.sleep(5)
+
+            except Exception as e:
+                logger.warning(f"⚠️ 查询失败: {e}")
+                await asyncio.sleep(5)
+
+    async def _download_file(self, url: str, output_path: str):
+        """下载文件"""
+        import httpx
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+        logger.info(f"✅ 已保存到: {output_path}")
+
+    async def close(self):
+        await self.client.aclose()
+
+
+class YunwuKlingOmniClient:
+    """
+    Kling v3 Omni 视频生成客户端（通过 Yunwu API）
+
+    只支持 kling-v3-omni 模型，用于多参考图视频生成。
+
+    与官方 API 的关键差异：
+    - 使用 `model_name` 参数（与官方 API 相同）
+    - Bearer Token 认证（复用 YUNWU_API_KEY）
+    - Base URL: https://yunwu.ai
+    """
+
+    OMNI_VIDEO_PATH = "/kling/v1/videos/omni-video"
+    QUERY_PATH = "/kling/v1/videos/omni-video/{task_id}"
+
+    MODEL = "kling-v3-omni"  # 固定使用 kling-v3-omni
+
+    def __init__(self):
+        import httpx
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0, connect=10.0),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
+        self.base_url = Config.YUNWU_BASE_URL  # https://yunwu.ai
+
+    async def create_omni_video(
+        self,
+        prompt: str,
+        duration: int = 5,
+        mode: str = "std",
+        aspect_ratio: str = "9:16",
+        audio: bool = False,
+        image_list: List[str] = None,
+        multi_shot: bool = False,
+        shot_type: str = None,
+        multi_prompt: List[Dict] = None,
+        output: str = None
+    ) -> Dict[str, Any]:
+        """
+        Omni-Video 生成（支持多参考图）
+
+        Args:
+            prompt: 视频描述，可使用 <<<image_1>>> 引用图片
+            duration: 时长（3-15秒）
+            mode: std 或 pro
+            aspect_ratio: 宽高比 (16:9, 9:16, 1:1)
+            audio: 是否生成音频
+            image_list: 图片路径列表，用于角色一致性
+            multi_shot: 是否多镜头
+            shot_type: intelligence 或 customize
+            multi_prompt: 自定义分镜的镜头列表
+            output: 输出文件路径
+        """
+        payload = {
+            "model_name": self.MODEL,  # 注意：yunwu kling-v3-omni 用 model_name
+            "prompt": prompt,
+            "duration": str(duration),
+            "mode": mode,
+            "audio": audio,
+            "aspect_ratio": aspect_ratio
+        }
+
+        # 处理 image_list（格式：[{"image_url": url_or_base64}, ...]）
+        if image_list:
+            processed_images = await self._prepare_image_list(image_list)
+            if processed_images:
+                payload["image_list"] = processed_images
+                logger.info(f"📎 使用 {len(processed_images)} 张参考图")
+
+        # 处理多镜头参数
+        if multi_shot:
+            payload["multi_shot"] = True
+            if shot_type:
+                payload["shot_type"] = shot_type
+            if multi_prompt and shot_type == "customize":
+                payload["multi_prompt"] = multi_prompt
+
+        logger.info(f"📤 创建 Yunwu Kling Omni-Video 任务: {prompt[:50]}...")
+
+        try:
+            response = await self.client.post(
+                f"{self.base_url}{self.OMNI_VIDEO_PATH}",
+                json=payload,
+                headers={"Authorization": f"Bearer {Config.YUNWU_API_KEY}"}
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            code = result.get("code")
+            if code != 0:
+                return {"success": False, "error": result.get("message", f"API error: {code}")}
+
+            data = result.get("data", {})
+            task_id = data.get("task_id")
+            if not task_id:
+                return {"success": False, "error": "API未返回task_id"}
+
+            logger.info(f"✅ Omni-Video 任务已创建: {task_id}")
+
+            video_url = await self._wait_for_completion(task_id)
+
+            if video_url and output:
+                await self._download_file(video_url, output)
+                return {"success": True, "video_url": video_url, "output": output, "task_id": task_id}
+
+            return {"success": True, "video_url": video_url, "task_id": task_id}
+
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg:
+                error_msg = "并发任务数超限，请等待现有任务完成后再试"
+            logger.error(f"❌ Yunwu Kling Omni-Video 失败: {error_msg}")
+            return {"success": False, "error": error_msg}
+
+    async def _prepare_image_list(self, image_paths: List[str]) -> List[Dict]:
+        """准备 image_list 参数"""
+        result = []
+        for img_path in image_paths:
+            try:
+                if img_path.startswith(('http://', 'https://')):
+                    result.append({"image_url": img_path})
+                else:
+                    # 本地文件转 base64
+                    base64_data = await self._file_to_base64(img_path)
+                    if base64_data:
+                        result.append({"image_url": base64_data})
+            except Exception as e:
+                logger.warning(f"⚠️ 参考图处理失败: {img_path}, {e}")
+        return result
+
+    async def _file_to_base64(self, file_path: str) -> Optional[str]:
+        """文件转 base64"""
+        if not os.path.exists(file_path):
+            logger.warning(f"⚠️ 文件不存在: {file_path}")
+            return None
+
+        # 验证并调整图片尺寸
+        result = validate_and_resize_image(file_path)
+        if not result["success"]:
+            logger.warning(f"⚠️ 图片处理失败: {file_path}, {result.get('error')}")
+            return None
+
+        with open(result["output_path"], 'rb') as f:
+            image_data = f.read()
+
+        base64_data = base64.b64encode(image_data).decode('utf-8')
+        ext = os.path.splitext(result["output_path"])[1].lower()
+        mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}
+        mime_type = mime_map.get(ext, 'image/jpeg')
+
+        return f"data:{mime_type};base64,{base64_data}"
+
+    async def _wait_for_completion(self, task_id: str, max_wait: int = 600) -> Optional[str]:
+        """等待任务完成"""
+        import time
+        start_time = time.monotonic()
+
+        query_path = self.QUERY_PATH.replace("{task_id}", task_id)
+
+        logger.info(f"⏳ 等待 Yunwu Kling Omni 任务完成: {task_id}")
+
+        while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed > max_wait:
+                logger.error(f"❌ 任务超时 ({max_wait}秒)")
+                return None
+
+            try:
+                response = await self.client.get(
+                    f"{self.base_url}{query_path}",
+                    headers={"Authorization": f"Bearer {Config.YUNWU_API_KEY}"}
+                )
+                response.raise_for_status()
+                result = response.json()
+
+                code = result.get("code")
+                if code != 0:
+                    logger.error(f"❌ 任务查询失败: {result.get('message')}")
+                    return None
+
+                data = result.get("data", {})
+                task_status = data.get("task_status")
+
+                if task_status == "succeed":
+                    task_result = data.get("task_result", {})
+                    videos = task_result.get("videos", [])
+                    if videos:
+                        video_url = videos[0].get("url")
+                        logger.info(f"✅ 任务完成 (耗时: {int(elapsed)}秒)")
+                        return video_url
+
+                elif task_status == "failed":
+                    task_status_msg = data.get("task_status_msg", "unknown")
+                    logger.error(f"❌ 任务失败: {task_status_msg}")
+                    return None
+
+                await asyncio.sleep(5)
+
+            except Exception as e:
+                logger.warning(f"⚠️ 查询失败: {e}")
+                await asyncio.sleep(5)
+
+    async def _download_file(self, url: str, output_path: str):
+        """下载文件"""
+        import httpx
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+        logger.info(f"✅ 已保存到: {output_path}")
+
+    async def close(self):
+        await self.client.aclose()
+
+
 # ============== Kling 视频生成 ==============
 
 class KlingClient:
@@ -1967,8 +2463,23 @@ async def cmd_vision(args):
 
 async def cmd_video(args):
     """视频生成命令"""
-    provider = getattr(args, 'provider', 'kling')
+    provider = getattr(args, 'provider', None)
     backend = getattr(args, 'backend', 'kling')
+
+    # Provider 自动选择逻辑（如果用户未指定）
+    if provider is None:
+        if backend == 'vidu':
+            provider = 'yunwu'  # vidu 只有 yunwu provider
+        elif Config.KLING_ACCESS_KEY and Config.KLING_SECRET_KEY:
+            provider = 'official'  # 优先使用官方 API
+        elif Config.YUNWU_API_KEY:
+            provider = 'yunwu'  # 其次使用 yunwu
+        elif Config.FAL_API_KEY:
+            provider = 'fal'  # 最后使用 fal
+        else:
+            provider = 'official'  # 默认，会报错提示配置
+
+    logger.info(f"🔧 使用 provider: {provider}, backend: {backend}")
 
     # 优先级：命令行 > storyboard.json > 默认值
     aspect_ratio = args.aspect_ratio
@@ -2017,7 +2528,7 @@ async def cmd_video(args):
         finally:
             await client.close()
 
-    # ==================== kling provider (官方 API) ====================
+    # ==================== kling provider (官方 API 或 yunwu) ====================
     # BackendRouter: 按功能需求强制切换（image-list 只有 omni 支持，tail-image 只有 kling 支持）
     image_list = getattr(args, 'image_list', None)
     tail_image = getattr(args, 'tail_image', None)
@@ -2028,6 +2539,89 @@ async def cmd_video(args):
         backend = 'kling'
         logger.info("🔀 检测到 --tail-image，自动切换到 kling 后端")
 
+    # ==================== yunwu provider ====================
+    if provider == 'yunwu':
+        if not Config.YUNWU_API_KEY:
+            print(json.dumps({
+                "success": False,
+                "error": "YUNWU_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 YUNWU_API_KEY",
+                "get_key": "访问 https://yunwu.ai 注册获取 API key"
+            }, indent=2, ensure_ascii=False))
+            return 1
+
+        audio = args.audio if hasattr(args, 'audio') else False
+        duration = max(3, min(15, args.duration))
+
+        # 处理多镜头参数
+        multi_shot = getattr(args, 'multi_shot', False)
+        shot_type = getattr(args, 'shot_type', None)
+        multi_prompt = None
+        if getattr(args, 'multi_prompt', None):
+            try:
+                multi_prompt = json.loads(args.multi_prompt)
+            except json.JSONDecodeError:
+                print(json.dumps({
+                    "success": False,
+                    "error": "multi_prompt JSON 解析失败"
+                }, indent=2, ensure_ascii=False))
+                return 1
+
+        if backend == 'kling-omni':
+            client = YunwuKlingOmniClient()
+            try:
+                image_list = getattr(args, 'image_list', None)
+                result = await client.create_omni_video(
+                    prompt=args.prompt,
+                    duration=duration,
+                    mode=args.mode if hasattr(args, 'mode') else "std",
+                    aspect_ratio=aspect_ratio,
+                    audio=audio,
+                    image_list=image_list,
+                    multi_shot=multi_shot,
+                    shot_type=shot_type,
+                    multi_prompt=multi_prompt,
+                    output=args.output
+                )
+            finally:
+                await client.close()
+        else:
+            # kling backend
+            client = YunwuKlingClient()
+            try:
+                if args.image:
+                    result = await client.create_image2video(
+                        image_path=args.image,
+                        prompt=args.prompt,
+                        duration=duration,
+                        mode=args.mode if hasattr(args, 'mode') else "std",
+                        audio=audio,
+                        image_tail=getattr(args, 'tail_image', None),
+                        output=args.output
+                    )
+                else:
+                    result = await client.create_text2video(
+                        prompt=args.prompt,
+                        duration=duration,
+                        mode=args.mode if hasattr(args, 'mode') else "std",
+                        aspect_ratio=aspect_ratio,
+                        audio=audio,
+                        multi_shot=multi_shot,
+                        shot_type=shot_type,
+                        multi_prompt=multi_prompt,
+                        output=args.output
+                    )
+            finally:
+                await client.close()
+
+        if result.get("success"):
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0
+        else:
+            print(f"错误: {result.get('error')}")
+            return 1
+
+    # ==================== official provider (官方 API) ====================
     # 检查对应后端的 API key
     if backend == 'kling':
         if not Config.KLING_ACCESS_KEY or not Config.KLING_SECRET_KEY:
@@ -2436,8 +3030,8 @@ def main():
     video_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径，自动读取 aspect_ratio")
     video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
-    video_parser.add_argument("--provider", choices=["kling", "fal"], default="kling",
-                              help="API 提供商 (kling=官方API, fal=fal.ai代理，参数和prompt写法与官方完全一致)")
+    video_parser.add_argument("--provider", choices=["official", "yunwu", "fal"], default=None,
+                              help="API provider (默认自动选择; vidu 仅支持 yunwu)")
     video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni"], default="kling",
                               help="视频生成后端 (默认 kling; vidu 为兜底; kling-omni 用于参考图)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro"], default="std",
