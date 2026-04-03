@@ -126,17 +126,23 @@ python video_gen_tools.py image --prompt "<描述>" --style cinematic --output i
 
 | 后端 | 模型 | 时长 | 特点 |
 |------|------|------|------|
-| **Kling Omni** | kling-3.0-omni | 3-15s | 多参考图(reference2video)、角色一致性最佳、音画同出 |
+| **Seedance** | seedance-2.0 | 5/10/15s | 智能切镜、多参考图（最多9张）、音画同出 |
+| **Kling Omni** | kling-3.0-omni | 3-15s | 多参考图(reference2video)、角色一致性、音画同出 |
 | **Kling** | kling-3.0 | 3-15s | 首帧精确控制(img2video)、画面质感好 |
 | **Vidu**（兜底） | vidu-q3-pro | 5-10s | 稳定、快速、首帧控制 |
 
 **关键区别**：
-- **Kling Omni** 支持 `reference2video`（多参考图），但**不支持 `img2video`（首帧控制）**
-- **Kling / Vidu** 支持 `img2video`（首帧控制），但不支持多参考图
+- **Seedance / Kling Omni** 支持多参考图（角色一致性），但**不支持首帧控制**
+- **Kling / Vidu** 支持首帧控制，但不支持多参考图
 
 **选择建议**：
-- 虚构片/短剧、MV → **Kling Omni**（角色一致性）
-- Vlog/写实类、广告片（有真实素材）→ **Kling 或 Vidu**（首帧控制）
+| 场景 | 优先后端 | 兜底后端 | 原因 |
+|-----|---------|---------|------|
+| **虚构片/短剧** | **Seedance** | Kling-Omni | 智能切镜 + 多参考图 |
+| **广告片（无真实素材）** | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
+| **广告片（有真实素材）** | Kling-3.0 / Vidu | — | 首帧精确控制 |
+| **MV短片** | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
+| **Vlog/写实类** | Kling-3.0 | Vidu | 首帧精确控制 |
 
 ### video_gen_editor.py
 

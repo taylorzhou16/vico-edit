@@ -53,20 +53,23 @@ python video_gen_tools.py video --provider fal --backend kling-omni --image-list
 
 ### 后端选择概览
 
-**核心原则：Phase 2 确认 visual_style，用于决定用户照片处理方式。**
+**场景驱动选择**：
+
+| 场景 | 优先后端 | 兜底后端 | 原因 |
+|-----|---------|---------|------|
+| **虚构片/短剧** | **Seedance** | Kling-Omni | 智能切镜 + 多参考图，角色一致性 |
+| **广告片（无真实素材）** | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
+| **广告片（有真实素材）** | Kling-3.0 / Vidu | — | 首帧精确控制，真实素材 |
+| **MV短片** | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
+| **Vlog/写实类** | Kling-3.0 | Vidu | 首帧精确控制，不走 Seedance |
+
+**visual_style 只影响用户照片处理方式（如有用户照片）**：
 
 | visual_style | 用户照片处理 | 说明 |
 |--------------|-------------|------|
 | `realistic`（真人写实） | **Seedance 需转换** | 用户真人照片需先生成三视图，再作为参考图 |
 | `anime`（动漫/二次元） | 直接使用 | 可直接作为参考图 |
 | `mixed`（混合） | 分场景处理 | 真人场景需转换，动漫场景直接使用 |
-
-**用户真人照片处理流程**：
-
-| 后端 | 用户真人照片处理方式 |
-|------|---------------------|
-| **Kling-Omni** | 直接作为 `image_list` 传入，模型综合参考 |
-| **Seedance** | 需要先转换（生成三视图保持容貌/体态），再注册为角色参考图 |
 
 **Seedance 用户真人照片转换流程**：
 ```
@@ -80,11 +83,12 @@ python video_gen_tools.py video --provider fal --backend kling-omni --image-list
 ```
 
 **关键规则**：
-- **Seedance 也可以生成真人实拍风格**，只是用户照片需先转换
-- **Kling-Omni 可以直接使用用户照片作为参考图**
+- **Seedance 优先用于虚构内容**（智能切镜是核心优势）
+- **Kling-Omni 作为 Seedance 失败时的降级备选**
+- **有真实素材时用 Kling/Vidu**（首帧精确控制）
 - **同一项目使用同一模型**，不混用（mixed 模式除外）
 
-详细后端对比和参考图策略：See [reference/backend-guide.md](reference/backend-guide.md)
+详细后端对比和降级策略：See [reference/backend-guide.md](reference/backend-guide.md)
 
 ---
 
@@ -256,9 +260,9 @@ manager.register("孙悟空", "male", None, "猴脸、金箍、虎皮裙")
 **触发条件**：虚构片/短剧、MV短片类型的项目（Vlog/写实类默认真人风格）。
 
 > **请选择角色画风**
-> - **A. 真人写实风格** — Seedance 和 Kling-Omni 都支持，如需用用户照片作参考图，Seedance 需先生成三视图转换
-> - **B. 动漫/二次元风格** — 可直接使用参考图，推荐 Seedance 智能切镜
-> - **C. 混合风格** — 分场景处理，真人场景照片需转换
+> - **A. 真人写实风格** — AI 生成的角色参考图采用真人演员风格
+> - **B. 动漫/二次元风格** — AI 生成的角色参考图采用动漫风格
+> - **C. 混合风格** — 分场景处理，真人场景和动漫场景各有不同画风
 
 **选择后写入 `creative.json`**：
 ```json
@@ -267,13 +271,18 @@ manager.register("孙悟空", "male", None, "猴脸、金箍、虎皮裙")
 }
 ```
 
-**对用户照片处理的影响**：
+**说明**：
 
-| visual_style | 用户照片处理方式 | 说明 |
-|--------------|-----------------|------|
-| `realistic` | Seedance 需转换 | 用户真人照片需先生成三视图，Kling-Omni 可直接使用 |
-| `anime` | 直接使用 | 可直接作为参考图 |
-| `mixed` | 分场景处理 | 真人场景照片需转换，动漫场景可直接使用 |
+| visual_style | AI 参考图风格 | 用户真人照片处理（如有） |
+|--------------|--------------|------------------------|
+| `realistic` | 真人演员风格 | Seedance 需先生成三视图转换，Kling-Omni 可直接使用 |
+| `anime` | 动漫/二次元风格 | 可直接作为参考图 |
+| `mixed` | 分场景决定 | 真人场景照片需转换，动漫场景可直接使用 |
+
+**关键认知**：
+- **纯创意模式（无用户照片）**：visual_style 只决定 AI 生成的参考图风格，**不影响后端选择**
+- **有用户照片模式**：visual_style 决定用户照片的处理方式（是否需要三视图转换）
+- **后端选择依据**：项目需求（智能切镜 vs 角色一致性 vs 首帧控制），而非 visual_style
 
 ### 问题 7: 角色参考图收集
 
@@ -432,50 +441,35 @@ storyboard["character_image_mapping"] = image_mapping
 
 ### Step 2: 自动后端选择逻辑
 
-**核心原则：根据项目需求选择后端，visual_style 只影响用户照片处理方式。**
+**场景驱动选择**：
 
-**Step 2.1: 读取 creative.json 的 visual_style**
+| 场景 | 优先后端 | 兜底后端 | 原因 |
+|-----|---------|---------|------|
+| **虚构片/短剧** | **Seedance** | Kling-Omni | 智能切镜 + 多参考图，角色一致性 |
+| **广告片（无真实素材）** | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
+| **广告片（有真实素材）** | Kling-3.0 / Vidu | — | 首帧精确控制，真实素材 |
+| **MV短片** | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
+| **Vlog/写实类** | Kling-3.0 | Vidu | 首帧精确控制，不走 Seedance |
 
-```python
-with open("creative/creative.json") as f:
-    creative = json.load(f)
-visual_style = creative.get("visual_style", "realistic")  # 用于决定用户照片处理方式
-```
+**首帧控制能力对比**：
 
-**Step 2.2: 根据项目需求选择后端**
+| 后端 | 首帧控制 | 说明 |
+|------|---------|------|
+| **Kling-3.0** | ✅ `--image` | 视频从此图开始 |
+| **Vidu** | ✅ `--image` | 首帧精确控制 |
+| **Seedance** | ❌ 参考图 | 分镜图是视觉风格参考，不是首帧 |
+| **Kling-Omni** | ❌ 参考图 | 只有 reference2video，无 img2video |
 
-| 项目需求 | 推荐后端 | 生成模式 | 原因 |
-|---------|---------|---------|------|
-| 智能切镜 + 多参考图 | **Seedance** | `seedance-video` | 时间分段自动触发 multi-shot |
-| 角色一致性 + 多人物 | **Kling-Omni** | `omni-video` | 多参考图综合参考 |
-| 首帧精确控制 | Kling-3.0 / Vidu | `img2video` | 用户素材首帧控制 |
-| 真实素材 + Vlog/写实 | Kling-3.0 / Vidu | `img2video` | 首帧精确控制 |
-
-**决策树**：
-
-```
-项目需求 →
-  ├── 需要智能切镜 → Seedance
-  │     └── 用户有真人照片 → 先生成三视图转换
-  ├── 需要角色一致性 + 多参考图 → Kling-Omni
-  │     └── 用户照片可直接使用
-  ├── 需要首帧精确控制 → Kling-3.0 / Vidu
-  └── Vlog/写实类（真实素材）→ Kling-3.0 / Vidu
-```
-
-**Vlog/写实类、广告片/宣传片（有真实素材）**：
-```
-真实素材 → 需要首帧控制
-           └── Kling-3.0 或 Vidu Q3 Pro（img2video）
-               └── --image: 用户素材首帧
-```
+**visual_style 只在「有用户真人照片 + 用 Seedance」时生效**：
+- `realistic` → 用户照片需先生成三视图转换
+- `anime` → 用户照片可直接使用
+- 纯创意模式下 visual_style 只影响 AI 参考图风格
 
 **核心原则**：
-1. **同一项目使用同一模型**，不混用（mixed 模式除外）
-2. **Seedance 和 Kling-Omni 都支持真人实拍风格**
-3. **虚构片不使用 text2video**
-4. **Omni 不支持首帧控制**，需要首帧控制时用 Kling-3.0 或 Vidu
-5. **Seedance 分镜图是参考**，不是首帧精确控制
+1. **同一项目使用同一模型**
+2. **虚构片不使用 text2video**
+3. **需要首帧控制时只能用 Kling 或 Vidu**
+4. **Seedance/Omni 分镜图是参考，不是首帧精确控制**
 
 ### Step 3: 生成分镜
 
