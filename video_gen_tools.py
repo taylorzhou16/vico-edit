@@ -216,6 +216,14 @@ class Config:
     def FAL_API_KEY(self) -> str:
         return self.get("FAL_API_KEY", "")
 
+    # Seedance API (via piapi)
+    @property
+    def SEEDANCE_API_KEY(self) -> str:
+        return self.get("SEEDANCE_API_KEY", "")
+
+    SEEDANCE_BASE_URL: str = "https://api.piapi.ai"
+    SEEDANCE_MODEL: str = "seedance-2-fast-preview"  # 或 seedance-2-preview（高质量）
+
 
 Config = Config()
 
@@ -1685,6 +1693,262 @@ class FalKlingClient:
         await self.http_client.aclose()
 
 
+class SeedanceClient:
+    """
+    Seedance 视频生成客户端（通过 piapi.ai 代理）
+
+    核心能力：
+    - Text-to-Video: 直接传 prompt
+    - Image-to-Video: 传 image_urls（参考图）
+    - 时间分段 prompt: 自动触发 multi-shot 智能切镜
+    - Video Edit: 传 video_urls 编辑已有视频
+
+    关键参数：
+    - model: "seedance"（固定）
+    - task_type: "seedance-2-fast-preview"（快速）或 "seedance-2-preview"（高质量）
+    - duration: 仅支持 5 / 10 / 15 三个枚举值
+    - aspect_ratio: 仅支持 16:9 / 9:16 / 4:3 / 3:4 四种比例
+    - image_urls: 最多 9 张参考图
+
+    Prompt 语法：
+    - 图片引用: "@image1" 引用第一张图片
+    - 时间分段: "0-2s：...；2-4s：...；4-6s：..."
+    """
+
+    TASK_PATH = "/api/v1/task"
+    STATUS_PATH = "/api/v1/task/{task_id}"
+
+    VALID_ASPECT_RATIOS = ["16:9", "9:16", "4:3", "3:4"]
+    VALID_DURATIONS = [5, 10, 15]
+
+    def __init__(self):
+        import httpx
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(120.0, connect=10.0),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
+
+    async def submit_task(
+        self,
+        prompt: str,
+        duration: int = 5,
+        aspect_ratio: str = "16:9",
+        image_urls: List[str] = None,
+        video_urls: List[str] = None,
+        model: str = None,
+        output: str = None
+    ) -> Dict[str, Any]:
+        """
+        提交视频生成任务
+
+        Args:
+            prompt: 视频描述（支持时间分段、@imageN 引用）
+            duration: 时长（仅支持 5 / 10 / 15 三个枚举值）
+            aspect_ratio: 宽高比（仅支持 16:9 / 9:16 / 4:3 / 3:4）
+            image_urls: 参考图列表（最多 9 张）
+            video_urls: 视频编辑模式的参考视频
+            model: "seedance-2-fast-preview" 或 "seedance-2-preview"
+            output: 输出文件路径
+        """
+        # 参数校验 - duration 必须是 5/10/15 之一
+        if duration not in self.VALID_DURATIONS:
+            # 取最近的合法值
+            closest = min(self.VALID_DURATIONS, key=lambda x: abs(x - duration))
+            logger.warning(f"⚠️ duration {duration}s 不在支持列表中，自动调整为 {closest}s")
+            duration = closest
+        if aspect_ratio not in self.VALID_ASPECT_RATIOS:
+            logger.warning(f"⚠️ aspect_ratio {aspect_ratio} 不在支持列表中，使用 16:9")
+            aspect_ratio = "16:9"
+
+        model = model or Config.SEEDANCE_MODEL
+
+        payload = {
+            "model": "seedance",
+            "task_type": model,
+            "input": {
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+                "duration": duration,
+            }
+        }
+
+        # 准备图片 URL
+        if image_urls:
+            payload["input"]["image_urls"] = [self._prepare_url(img) for img in image_urls]
+
+        # 视频编辑模式
+        if video_urls:
+            payload["input"]["video_urls"] = [self._prepare_url(v) for v in video_urls]
+            payload["input"]["duration"] = 0  # Video edit 忽略 duration
+
+        logger.info(f"📤 创建 Seedance 任务: {prompt[:80]}...")
+        logger.info(f"   参数: duration={duration}s, aspect_ratio={aspect_ratio}, model={model}")
+
+        try:
+            response = await self.client.post(
+                f"{Config.SEEDANCE_BASE_URL}{self.TASK_PATH}",
+                json=payload,
+                headers={"Authorization": f"Bearer {Config.SEEDANCE_API_KEY}"}
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            task_id = result.get("data", {}).get("task_id")
+            if not task_id:
+                error = result.get("data", {}).get("error", {})
+                logger.error(f"❌ API 未返回 task_id: {error}")
+                return {"success": False, "error": error.get("message", "Unknown error")}
+
+            logger.info(f"✅ Seedance 任务已创建: {task_id}")
+
+            # 等待完成
+            video_url = await self._wait_for_completion(task_id)
+
+            if video_url and output:
+                await self._download_file(video_url, output)
+                return {"success": True, "video_url": video_url, "output": output, "task_id": task_id}
+
+            return {"success": bool(video_url), "video_url": video_url, "task_id": task_id}
+
+        except Exception as e:
+            logger.error(f"❌ Seedance 任务失败: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def generate_video(
+        self,
+        prompt: str,
+        duration: int = 5,
+        aspect_ratio: str = "16:9",
+        image_urls: List[str] = None,
+        output: str = None
+    ) -> Dict[str, Any]:
+        """
+        完整视频生成流程（快捷方法）
+        """
+        return await self.submit_task(
+            prompt=prompt,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            image_urls=image_urls,
+            output=output
+        )
+
+    async def check_task(self, task_id: str) -> Dict[str, Any]:
+        """查询任务状态"""
+        try:
+            response = await self.client.get(
+                f"{Config.SEEDANCE_BASE_URL}{self.STATUS_PATH.format(task_id=task_id)}",
+                headers={"Authorization": f"Bearer {Config.SEEDANCE_API_KEY}"}
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.warning(f"⚠️ 查询任务状态失败: {e}")
+            return {"error": str(e)}
+
+    def _prepare_url(self, path: str) -> str:
+        """准备 URL（本地文件转 data URI）"""
+        if path.startswith(('http://', 'https://')):
+            return path
+        return self._file_to_data_uri(path)
+
+    def _file_to_data_uri(self, file_path: str) -> str:
+        """将本地文件转为 data URI 格式的 base64
+
+        注意：piapi.ai 对请求体大小有限制，大图片需要压缩
+        """
+        # 检查文件大小
+        file_size = os.path.getsize(file_path)
+        max_size = 100 * 1024  # 100KB 阈值
+
+        if file_size > max_size:
+            # 压缩图片
+            logger.info(f"📦 图片较大 ({file_size/1024:.1f}KB)，正在压缩...")
+            try:
+                from PIL import Image
+                import io
+
+                img = Image.open(file_path)
+                # 缩小到 512x512 以内
+                img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                # 转为 RGB（去除 alpha 通道）
+                img = img.convert('RGB')
+
+                # 保存为 JPEG
+                buffer = io.BytesIO()
+                img.save(buffer, format='JPEG', quality=70)
+                data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                logger.info(f"✅ 压缩完成 ({len(data)/1024:.1f}KB)")
+                return f"data:image/jpeg;base64,{data}"
+            except Exception as e:
+                logger.warning(f"⚠️ 图片压缩失败，使用原始图片: {e}")
+
+        # 小图片直接读取
+        ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+        if ext == 'jpg':
+            ext = 'jpeg'
+        with open(file_path, 'rb') as f:
+            data = base64.b64encode(f.read()).decode('utf-8')
+        return f"data:image/{ext};base64,{data}"
+
+    async def _wait_for_completion(self, task_id: str, max_wait: int = 600) -> Optional[str]:
+        """等待任务完成"""
+        import time
+        start_time = time.monotonic()
+
+        logger.info(f"⏳ 等待 Seedance 任务完成: {task_id}")
+
+        while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed > max_wait:
+                logger.error(f"❌ Seedance 任务超时 ({max_wait}秒)")
+                return None
+
+            try:
+                result = await self.check_task(task_id)
+                data = result.get("data", {})
+                status = data.get("status", "unknown")
+
+                logger.info(f"   [{int(elapsed)}s] 状态: {status}")
+
+                if status == "completed":
+                    video_url = data.get("output", {}).get("video")
+                    if video_url:
+                        logger.info(f"✅ Seedance 任务完成 (耗时: {int(elapsed)}秒)")
+                        return video_url
+                    else:
+                        logger.error(f"❌ 结果中无视频 URL: {data}")
+                        return None
+
+                elif status == "failed":
+                    error = data.get("error", {})
+                    logger.error(f"❌ Seedance 任务失败: {error.get('message', 'Unknown')}")
+                    return None
+
+                await asyncio.sleep(10)
+
+            except Exception as e:
+                logger.warning(f"⚠️ 查询异常: {e}")
+                await asyncio.sleep(10)
+
+    async def _download_file(self, url: str, output_path: str):
+        """下载文件"""
+        import httpx
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+        logger.info(f"✅ 已保存到: {output_path}")
+
+    async def close(self):
+        await self.client.aclose()
+
+
 class SunoClient:
     """Suno 音乐生成客户端"""
 
@@ -1993,6 +2257,107 @@ class ImageClient:
                 return {"success": True, "output": output}
 
             return {"success": True, "image_base64": image_data}
+
+        except Exception as e:
+            logger.error(f"❌ 图片生成失败: {e}")
+            return {"success": False, "error": str(e)}
+
+
+class FalImageClient:
+    """Gemini 图片生成客户端（通过 fal.ai API）"""
+
+    FAL_IMAGE_URL = "https://fal.run/fal-ai/gemini-3.1-flash-image-preview"
+    FAL_IMAGE_EDIT_URL = "https://fal.run/fal-ai/gemini-3.1-flash-image-preview/edit"
+
+    STYLE_PRESETS = {
+        "cinematic": "cinematic style, film grain, dramatic lighting, movie still",
+        "realistic": "photorealistic, natural lighting, high detail, 8k",
+        "anime": "anime style, vibrant colors, clean lines, studio ghibli inspired",
+        "artistic": "artistic style, painterly, expressive brushstrokes, impressionist",
+    }
+
+    # fal 支持的 aspect_ratio
+    ASPECT_RATIOS = ["auto", "21:9", "16:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16", "4:1", "1:4", "8:1", "1:8"]
+
+    async def generate(
+        self,
+        prompt: str,
+        output: str = None,
+        style: str = "cinematic",
+        aspect_ratio: str = "9:16",
+        reference_images: List[str] = None
+    ) -> Dict[str, Any]:
+        """生成图片，支持多参考图"""
+        import httpx
+
+        style_suffix = self.STYLE_PRESETS.get(style, style)
+        full_prompt = f"{prompt}, {style_suffix}"
+
+        # fal 的 aspect_ratio 格式
+        fal_aspect = aspect_ratio if aspect_ratio in self.ASPECT_RATIOS else "auto"
+
+        payload = {
+            "prompt": full_prompt,
+            "aspect_ratio": fal_aspect,
+            "num_images": 1,
+        }
+
+        # 图生图模式：有参考图时使用 edit endpoint
+        is_edit_mode = reference_images and len(reference_images) > 0
+        url = self.FAL_IMAGE_EDIT_URL if is_edit_mode else self.FAL_IMAGE_URL
+
+        if is_edit_mode:
+            # 上传参考图到临时存储或使用 base64
+            image_urls = []
+            for ref_path in reference_images:
+                if os.path.exists(ref_path):
+                    # 转换为 base64 data URI
+                    with open(ref_path, 'rb') as f:
+                        img_data = f.read()
+                    ext = os.path.splitext(ref_path)[1].lower()
+                    mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}
+                    mime_type = mime_map.get(ext, 'image/jpeg')
+                    data_uri = f"data:{mime_type};base64,{base64.b64encode(img_data).decode('utf-8')}"
+                    image_urls.append(data_uri)
+
+            payload["image_urls"] = image_urls
+            logger.info(f"📤 图片生成（fal edit，{len(image_urls)} 参考图）: {prompt[:30]}...")
+        else:
+            logger.info(f"📤 图片生成（fal t2i）: {prompt[:30]}...")
+
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Key {Config.FAL_API_KEY}",
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            images = result.get("images", [])
+            if not images:
+                return {"success": False, "error": "No image generated"}
+
+            image_url = images[0].get("url")
+            if not image_url:
+                return {"success": False, "error": "No image URL in response"}
+
+            # 下载图片
+            if output:
+                Path(output).parent.mkdir(parents=True, exist_ok=True)
+                async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as dl_client:
+                    dl_resp = await dl_client.get(image_url)
+                    dl_resp.raise_for_status()
+                    with open(output, "wb") as f:
+                        f.write(dl_resp.content)
+                logger.info(f"✅ 图片已保存: {output}")
+                return {"success": True, "output": output, "url": image_url}
+
+            return {"success": True, "url": image_url}
 
         except Exception as e:
             logger.error(f"❌ 图片生成失败: {e}")
@@ -2467,12 +2832,14 @@ async def cmd_video(args):
     if provider is None:
         if backend == 'vidu':
             provider = 'yunwu'  # vidu 只有 yunwu provider
+        elif backend == 'seedance':
+            provider = 'piapi'  # seedance 只有 piapi provider
         elif Config.KLING_ACCESS_KEY and Config.KLING_SECRET_KEY:
             provider = 'official'  # 优先使用官方 API
-        elif Config.YUNWU_API_KEY:
-            provider = 'yunwu'  # 其次使用 yunwu
         elif Config.FAL_API_KEY:
-            provider = 'fal'  # 最后使用 fal
+            provider = 'fal'       # 其次使用 fal
+        elif Config.YUNWU_API_KEY:
+            provider = 'yunwu'     # 最后使用 yunwu
         else:
             provider = 'official'  # 默认，会报错提示配置
 
@@ -2526,13 +2893,12 @@ async def cmd_video(args):
             await client.close()
 
     # ==================== kling provider (官方 API 或 yunwu) ====================
-    # BackendRouter: 按功能需求强制切换（image-list 只有 omni 支持，tail-image 只有 kling 支持）
+    # BackendRouter: 按功能需求强制切换
+    # - image-list: kling-omni 和 seedance 都支持，不强制切换
+    # - tail-image: 只有 kling 支持，需要强制切换
     image_list = getattr(args, 'image_list', None)
     tail_image = getattr(args, 'tail_image', None)
-    if image_list and backend != 'kling-omni':
-        backend = 'kling-omni'
-        logger.info("🔀 检测到 --image-list，自动切换到 kling-omni 后端")
-    elif tail_image and backend != 'kling':
+    if tail_image and backend not in ['kling']:
         backend = 'kling'
         logger.info("🔀 检测到 --tail-image，自动切换到 kling 后端")
 
@@ -2738,6 +3104,47 @@ async def cmd_video(args):
         finally:
             await client.close()
 
+    elif backend == 'seedance':
+        if not Config.SEEDANCE_API_KEY:
+            print(json.dumps({
+                "success": False,
+                "error": "SEEDANCE_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 SEEDANCE_API_KEY",
+                "get_key": "Seedance 通过 piapi.ai 代理，访问 https://piapi.ai 注册获取 API key"
+            }, indent=2, ensure_ascii=False))
+            return 1
+
+        client = SeedanceClient()
+        try:
+            # Seedance 时长必须是 5/10/15 之一
+            valid_durations = [5, 10, 15]
+            if args.duration not in valid_durations:
+                closest = min(valid_durations, key=lambda x: abs(x - args.duration))
+                logger.warning(f"⚠️ Seedance duration {args.duration}s 不支持，调整为 {closest}s")
+                duration = closest
+            else:
+                duration = args.duration
+
+            # 获取 image_list 参数（用于 I2V）
+            image_list = getattr(args, 'image_list', None)
+
+            result = await client.submit_task(
+                prompt=args.prompt,
+                duration=duration,
+                aspect_ratio=aspect_ratio,
+                image_urls=image_list,
+                output=args.output
+            )
+
+            if result.get("success"):
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+                return 0
+            else:
+                print(f"错误: {result.get('error')}")
+                return 1
+        finally:
+            await client.close()
+
     else:
         # Vidu (Yunwu) 后端
         if not Config.YUNWU_API_KEY:
@@ -2874,6 +3281,19 @@ async def cmd_tts(args):
 
 async def cmd_image(args):
     """图片生成命令"""
+    # Provider 自动选择逻辑
+    provider = getattr(args, 'provider', None)
+    if provider is None:
+        # 优先级：fal → yunwu（yunwu 放最后）
+        if Config.FAL_API_KEY:
+            provider = 'fal'
+        elif Config.GEMINI_API_KEY:  # GEMINI_API_KEY 实际上是 YUNWU_API_KEY
+            provider = 'yunwu'
+        else:
+            provider = 'fal'  # 默认，会报错提示配置
+
+    logger.info(f"🔧 使用 provider: {provider}")
+
     # 优先级：命令行 > storyboard.json > 默认值
     aspect_ratio = args.aspect_ratio
     if aspect_ratio is None and hasattr(args, 'storyboard') and args.storyboard:
@@ -2884,23 +3304,45 @@ async def cmd_image(args):
         aspect_ratio = "9:16"  # 最终默认值
         logger.info(f"📐 使用默认宽高比: {aspect_ratio}")
 
-    if not Config.GEMINI_API_KEY:
-        print(json.dumps({
-            "success": False,
-            "error": "YUNWU_API_KEY 未配置（用于 Gemini 图片生成）",
-            "hint": "请设置环境变量: export YUNWU_API_KEY='your-api-key'",
-            "get_key": "访问 https://yunwu.ai 注册获取 API key"
-        }, indent=2, ensure_ascii=False))
-        return 1
+    # fal provider
+    if provider == 'fal':
+        if not Config.FAL_API_KEY:
+            print(json.dumps({
+                "success": False,
+                "error": "FAL_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 FAL_API_KEY",
+                "get_key": "访问 https://fal.ai 获取 API key"
+            }, indent=2, ensure_ascii=False))
+            return 1
 
-    client = ImageClient()
-    result = await client.generate(
-        prompt=args.prompt,
-        output=args.output,
-        style=args.style,
-        aspect_ratio=aspect_ratio,
-        reference_images=args.reference
-    )
+        client = FalImageClient()
+        result = await client.generate(
+            prompt=args.prompt,
+            output=args.output,
+            style=args.style,
+            aspect_ratio=aspect_ratio,
+            reference_images=args.reference
+        )
+
+    # yunwu provider (Gemini via Yunwu)
+    else:
+        if not Config.GEMINI_API_KEY:
+            print(json.dumps({
+                "success": False,
+                "error": "YUNWU_API_KEY 未配置（用于 Gemini 图片生成）",
+                "hint": "请设置环境变量: export YUNWU_API_KEY='your-api-key'",
+                "get_key": "访问 https://yunwu.ai 注册获取 API key"
+            }, indent=2, ensure_ascii=False))
+            return 1
+
+        client = ImageClient()
+        result = await client.generate(
+            prompt=args.prompt,
+            output=args.output,
+            style=args.style,
+            aspect_ratio=aspect_ratio,
+            reference_images=args.reference
+        )
 
     if result.get("success"):
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -3029,8 +3471,8 @@ def main():
     video_parser.add_argument("--output", "-o", help="输出文件路径")
     video_parser.add_argument("--provider", choices=["official", "yunwu", "fal"], default=None,
                               help="API provider (默认自动选择; vidu 仅支持 yunwu)")
-    video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni"], default="kling",
-                              help="视频生成后端 (默认 kling; vidu 为兜底; kling-omni 用于参考图)")
+    video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni", "seedance"], default="kling",
+                              help="视频生成后端 (默认 kling; vidu 为兜底; kling-omni 用于参考图; seedance 用于智能切镜)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro"], default="std",
                               help="生成模式 (Kling 专用: std 或 pro)")
     video_parser.add_argument("--multi-shot", action="store_true",
@@ -3073,6 +3515,8 @@ def main():
     image_parser.add_argument("--aspect-ratio", "-a", default=None, help="宽高比")
     image_parser.add_argument("--storyboard", help="storyboard.json 路径，自动读取 aspect_ratio")
     image_parser.add_argument("--reference", "-r", nargs="+", help="参考图路径（支持多个，重要人物放后面）")
+    image_parser.add_argument("--provider", choices=["fal", "yunwu"], default=None,
+                              help="API provider (默认自动选择: fal 优先)")
 
     # vision 子命令（内置多模态分析）
     vision_parser = subparsers.add_parser("vision", help="分析图片内容")

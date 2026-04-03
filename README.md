@@ -212,6 +212,38 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 
 ## 📋 更新日志
 
+### v1.5.0 (2026-04-03)
+🎬 **Seedance 智能切镜 + fal 图片生成**
+
+#### 新增功能
+- ✨ **SeedanceClient** — 新增 Seedance 视频生成客户端（通过 piapi.ai 代理）
+  - 智能切镜：时间分段 prompt 自动触发 multi-shot
+  - 时长限制：仅支持 5/10/15s（三个枚举值）
+  - 宽高比：16:9 / 9:16 / 4:3 / 3:4
+  - 图片引用语法：`@imageN`（非 `<<<image_N>>>`）
+- ✨ **FalImageClient** — 新增 fal.ai Gemini 3.1 Flash 图片生成客户端
+  - 文生图、图生图、多参考图编辑
+- ✨ **narration 命令** — video_gen_editor.py 新增旁白合成命令
+
+#### 架构优化
+- 🔄 **Provider 优先级调整** — yunwu 放到最后：`official → fal → yunwu`
+- 🔄 **visual_style 语义变更** — 从"后端选择"改为"用户照片处理方式"
+  - `realistic`：Seedance 需先生成三视图转换，Kling-Omni 可直接使用
+  - `anime`：可直接作为参考图
+
+#### 文档修正
+- 📝 **Seedance 时长限制** — 修正为 5/10/15s（非 4-15s 范围）
+- 📝 **Seedance 图片语法** — 修正为 `@imageN`
+- 📝 **移除 21:9** — Seedance 不支持 21:9 宽高比
+- 📝 **时间分段 prompt 格式** — 新增完整模板和示例
+
+#### 文件变更
+- 📝 `video_gen_tools.py` — 新增 SeedanceClient、FalImageClient
+- 📝 `video_gen_editor.py` — 新增 narration 命令
+- 📝 `SKILL.md` — 新增 Seedance 执行逻辑、时间分段格式、照片转换流程
+- 📝 `reference/backend-guide.md` — 更新 Provider 优先级、Seedance 参数
+- 📝 `reference/storyboard-spec.md` — 新增 Seedance 时长规划章节
+
 ### v1.4.6 (2026-04-02)
 🔧 **API 字段名修复**
 
@@ -249,7 +281,7 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 - ✨ **YunwuKlingClient** — 新增 yunwu kling-v3 客户端，支持 text2video、img2video、multi_shot、首尾帧控制、audio
 - ✨ **YunwuKlingOmniClient** — 新增 yunwu kling-v3-omni 客户端，支持 omni-video、image_list 多参考图、multi_shot、audio
 - ✨ **--provider 参数** — 新增 provider 选择（official/yunwu/fal），支持同一 backend 切换不同 provider
-- ✨ **Provider 自动选择** — 未指定时按优先级自动选择：official > yunwu > fal
+- ✨ **Provider 自动选择** — 未指定时按优先级自动选择：official > fal > yunwu
 
 #### 架构优化
 - 🔄 **Backend/Provider 分离** — backend 选择功能（vidu/kling/kling-omni），provider 选择服务源（official/yunwu/fal）

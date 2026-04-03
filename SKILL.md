@@ -20,17 +20,28 @@ argument-hint: <素材目录或视频文件>
 
 ### Provider 选择
 
+**不同后端支持的 Provider 不同**：
+
+| 后端 | 支持的 Provider | 说明 |
+|------|----------------|------|
+| `seedance` | **仅 piapi** | Seedance 只有 piapi 一个 provider，不支持 yunwu/fal |
+| `kling-omni` | official, yunwu, fal | 官方 API 遇限制时可切换 |
+| `kling` | official, yunwu | 官方 API 遇限制时可切换 |
+| `vidu` | **仅 yunwu** | Vidu 只有 yunwu 一个 provider |
+
 当 Kling 官方 API 遇到并发限制（429）时，可使用 `--provider yunwu` 或 `--provider fal`：
 
 ```bash
-# yunwu 代理（支持 Vidu/Kling/Kling-Omni 全系列）
+# yunwu 代理（支持 Vidu/Kling/Kling-Omni）
 python video_gen_tools.py video --provider yunwu --backend kling-omni --image-list ref.jpg ...
 
 # fal.ai 代理（仅支持 kling-omni）
 python video_gen_tools.py video --provider fal --backend kling-omni --image-list ref.jpg ...
 ```
 
-**Provider 自动选择优先级**：官方 API → yunwu → fal
+**注意**：Seedance 不需要指定 `--provider`，因为它只有 piapi 一个 provider。
+
+**Provider 自动选择优先级**：官方 API → fal → yunwu
 
 ---
 
@@ -42,16 +53,36 @@ python video_gen_tools.py video --provider fal --backend kling-omni --image-list
 
 ### 后端选择概览
 
-| 模型 | 核心优势 | 推荐场景 |
-|------|---------|---------|
-| **Kling-3.0-Omni** (`kling-omni`) | image_list 多参考图、角色一致性最佳 | 虚构片/短剧、MV短片（reference2video） |
-| **Kling-3.0** (`kling`) | 首帧精确控制、画面质感好 | Vlog/写实类、广告片（img2video） |
-| **Vidu Q3 Pro** (`vidu`) | 稳定、快速 | 兜底、快速处理真实素材 |
+**核心原则：Phase 2 确认 visual_style，用于决定用户照片处理方式。**
 
-**核心原则**：
-- **同一项目使用同一模型**，不混用
-- **虚构片优先 Kling-3.0-Omni**（reference2video）
-- **首帧控制用 Kling-3.0 或 Vidu**（img2video，Omni不支持首帧控制）
+| visual_style | 用户照片处理 | 说明 |
+|--------------|-------------|------|
+| `realistic`（真人写实） | **Seedance 需转换** | 用户真人照片需先生成三视图，再作为参考图 |
+| `anime`（动漫/二次元） | 直接使用 | 可直接作为参考图 |
+| `mixed`（混合） | 分场景处理 | 真人场景需转换，动漫场景直接使用 |
+
+**用户真人照片处理流程**：
+
+| 后端 | 用户真人照片处理方式 |
+|------|---------------------|
+| **Kling-Omni** | 直接作为 `image_list` 传入，模型综合参考 |
+| **Seedance** | 需要先转换（生成三视图保持容貌/体态），再注册为角色参考图 |
+
+**Seedance 用户真人照片转换流程**：
+```
+用户提供真人照片 →
+  ├── 调用 Gemini 生成三视图（保持容貌、体态、身材细节）→
+  │   - 正面视角
+  │   - 侧面视角
+  │   - 全身比例
+  ├── 选择最佳视角作为角色参考图 →
+  └── 注册到 personas.json
+```
+
+**关键规则**：
+- **Seedance 也可以生成真人实拍风格**，只是用户照片需先转换
+- **Kling-Omni 可以直接使用用户照片作为参考图**
+- **同一项目使用同一模型**，不混用（mixed 模式除外）
 
 详细后端对比和参考图策略：See [reference/backend-guide.md](reference/backend-guide.md)
 
@@ -220,7 +251,31 @@ manager.register("孙悟空", "male", None, "猴脸、金箍、虎皮裙")
 
 **重要原则**：能收同期声的镜头，都不要用后期 TTS 配音！
 
-### 问题 6: 角色参考图收集
+### 问题 6: 角色画风选择
+
+**触发条件**：虚构片/短剧、MV短片类型的项目（Vlog/写实类默认真人风格）。
+
+> **请选择角色画风**
+> - **A. 真人写实风格** — Seedance 和 Kling-Omni 都支持，如需用用户照片作参考图，Seedance 需先生成三视图转换
+> - **B. 动漫/二次元风格** — 可直接使用参考图，推荐 Seedance 智能切镜
+> - **C. 混合风格** — 分场景处理，真人场景照片需转换
+
+**选择后写入 `creative.json`**：
+```json
+{
+  "visual_style": "realistic"  // realistic / anime / mixed
+}
+```
+
+**对用户照片处理的影响**：
+
+| visual_style | 用户照片处理方式 | 说明 |
+|--------------|-----------------|------|
+| `realistic` | Seedance 需转换 | 用户真人照片需先生成三视图，Kling-Omni 可直接使用 |
+| `anime` | 直接使用 | 可直接作为参考图 |
+| `mixed` | 分场景处理 | 真人场景照片需转换，动漫场景可直接使用 |
+
+### 问题 7: 角色参考图收集
 
 **触发条件**：检查 personas.json，存在 `reference_image` 为 null/空 的角色时触发。
 
@@ -243,11 +298,19 @@ for persona_id in manager.list_personas_without_reference():
 
 **选择后处理**：
 
-**A. AI生成**：
+**A. AI生成**（根据 visual_style 决定画风）：
 ```python
-# 生成角色参考图
+# 读取 visual_style
+visual_style = creative.get("visual_style", "realistic")
+
+# 根据画风生成对应风格的参考图
+if visual_style == "anime":
+    style_suffix = "anime style, 2D animation, vibrant colors"
+else:  # realistic
+    style_suffix = "photorealistic, cinematic, realistic"
+
 python video_gen_tools.py image \
-  --prompt "{角色外貌描述}，正面半身照，纯色背景，高清肖像" \
+  --prompt "{角色外貌描述}，{style_suffix}，正面半身照，纯色背景，高清肖像" \
   --output materials/personas/{name}_ref.png
 
 # 更新 personas.json
@@ -266,24 +329,44 @@ manager.update_reference_image(persona_id, "materials/personas/{name}_ref.png")
 **关键规则**：
 - **必须生成参考图**：角色需要在**多个镜头**中出现时
 - **可用 text2video**：单一场景出现、纯风景、用户明确接受外貌波动
+- **AI 生成参考图时必须遵循 visual_style**：anime 风格或 realistic 风格
 
 ### Phase 2 产出
 
-- `creative/creative.json` — 创意方案
+- `creative/creative.json` — 创意方案（含 visual_style 画风决策）
 - 更新 `personas.json` — 补充 reference_images（如有）
 - `creative/decision_log.json` — 记录参考图相关决策
 
-**creative.json narration 字段结构**：
+**creative.json 结构**：
 
 ```json
 {
+  "title": "项目标题",
+  "style": "cinematic",
+  "duration": 30,
+  "aspect_ratio": "16:9",
+  "visual_style": "anime",  // realistic / anime / mixed — 画风决策
+  "music": {
+    "enabled": true,
+    "source": "ai_generated",
+    "prompt": "音乐描述",
+    "style": "音乐风格"
+  },
   "narration": {
-    "type": "ai_generated",           // none / ai_generated / user_provided
-    "voice_style": "温柔女声，语速适中", // 旁白风格（ai_generated 时由用户指定）
-    "user_text": "用户提供的完整旁白文案"  // user_provided 时必填
+    "type": "ai_generated",
+    "voice_style": "温柔女声，语速适中",
+    "user_text": null
   }
 }
 ```
+
+**visual_style 字段说明**：
+
+| 值 | 说明 | 用户照片处理 |
+|---|------|-------------|
+| `realistic` | 真人写实风格 | Seedance 需先生成三视图转换，Kling-Omni 可直接使用 |
+| `anime` | 动漫/二次元风格 | 可直接作为参考图 |
+| `mixed` | 混合风格 | 真人场景照片需转换，动漫场景可直接使用 |
 
 | type | 说明 | Phase 3 处理 |
 |------|------|-------------|
@@ -349,27 +432,35 @@ storyboard["character_image_mapping"] = image_mapping
 
 ### Step 2: 自动后端选择逻辑
 
-**根据项目类型自动选择后端**（无需人工决策）：
+**核心原则：根据项目需求选择后端，visual_style 只影响用户照片处理方式。**
 
-#### 项目类型判断（Phase 1 自动识别）
+**Step 2.1: 读取 creative.json 的 visual_style**
 
-| 用户意图关键词 | 项目类型 |
-|---------------|---------|
-| "短剧"、"剧情"、"故事" | 虚构片/短剧 |
-| "vlog"、"旅行记录"、"生活记录" | Vlog/写实类 |
-| "广告"、"宣传片"、"产品展示" | 广告片/宣传片 |
-| "MV"、"音乐视频" | MV短片 |
-
-#### 决策树
-
-**虚构片/短剧、MV短片**：
+```python
+with open("creative/creative.json") as f:
+    creative = json.load(f)
+visual_style = creative.get("visual_style", "realistic")  # 用于决定用户照片处理方式
 ```
-虚构内容 → 所有镜头强制先生成分镜图
-           ├── 优先 → Kling-3.0-Omni（reference2video）
-           │         └── image_list: [分镜图, 角色参考图]
-           │
-           └── 兜底 → Kling-3.0 或 Vidu Q3 Pro（img2video）
-                      └── --image: 分镜图首帧
+
+**Step 2.2: 根据项目需求选择后端**
+
+| 项目需求 | 推荐后端 | 生成模式 | 原因 |
+|---------|---------|---------|------|
+| 智能切镜 + 多参考图 | **Seedance** | `seedance-video` | 时间分段自动触发 multi-shot |
+| 角色一致性 + 多人物 | **Kling-Omni** | `omni-video` | 多参考图综合参考 |
+| 首帧精确控制 | Kling-3.0 / Vidu | `img2video` | 用户素材首帧控制 |
+| 真实素材 + Vlog/写实 | Kling-3.0 / Vidu | `img2video` | 首帧精确控制 |
+
+**决策树**：
+
+```
+项目需求 →
+  ├── 需要智能切镜 → Seedance
+  │     └── 用户有真人照片 → 先生成三视图转换
+  ├── 需要角色一致性 + 多参考图 → Kling-Omni
+  │     └── 用户照片可直接使用
+  ├── 需要首帧精确控制 → Kling-3.0 / Vidu
+  └── Vlog/写实类（真实素材）→ Kling-3.0 / Vidu
 ```
 
 **Vlog/写实类、广告片/宣传片（有真实素材）**：
@@ -379,31 +470,32 @@ storyboard["character_image_mapping"] = image_mapping
                └── --image: 用户素材首帧
 ```
 
-#### 选择规则表
-
-| 项目类型 | 素材情况 | 生成模式 | 后端 |
-|---------|---------|---------|------|
-| 虚构片/短剧 | 有/无角色参考图 | **reference2video** | kling-omni |
-| MV短片 | 有/无角色参考图 | **reference2video** | kling-omni |
-| Vlog/写实类 | 用户真实素材 | **img2video** | kling 或 vidu |
-| 广告片/宣传片 | 有真实素材 | **img2video** | kling 或 vidu |
-| 广告片/宣传片 | 无真实素材 | **reference2video** | kling-omni |
-
 **核心原则**：
-1. **同一项目使用同一模型**，不混用
-2. **虚构片不使用 text2video**
-3. **Omni 不支持首帧控制**，需要首帧控制时用 Kling-3.0 或 Vidu
+1. **同一项目使用同一模型**，不混用（mixed 模式除外）
+2. **Seedance 和 Kling-Omni 都支持真人实拍风格**
+3. **虚构片不使用 text2video**
+4. **Omni 不支持首帧控制**，需要首帧控制时用 Kling-3.0 或 Vidu
+5. **Seedance 分镜图是参考**，不是首帧精确控制
 
 ### Step 3: 生成分镜
 
 **核心结构**：Storyboard 采用 `scenes[] → shots[]` 两层结构。
 
 **关键设计原则**：
-1. 总时长 = 目标时长（±2秒），单镜头 2-5 秒
-2. 同一分镜内最多 1 个动作，禁止空间变化
-3. 所有 video_prompt 必须包含比例信息
-4. 台词必须融入 video_prompt（角色 + 内容 + 情绪 + 声音）
-5. 根据 Step 2 的自动选择结果设置 `generation_mode` 和 `reference_images`
+
+1. **时长设计（根据后端限制）**：
+   | 后端 | Scene 总时长限制 | 设计策略 |
+   |------|-----------------|---------|
+   | **Seedance** | **仅支持 5/10/15s**（枚举值） | 每个 scene 必须是 5/10/15s，shots 合并后不能超出 |
+   | Kling-Omni | 3-15s（连续范围） | scene 总时长 ≤15s 即可 |
+   | Kling-3.0 | 3-15s（连续范围） | 每个单独 shot ≤15s |
+   | Vidu | 5-10s | 每个 shot 5-10s |
+
+2. 总时长 = 目标时长（±2秒），单镜头 2-5 秒
+3. 同一分镜内最多 1 个动作，禁止空间变化
+4. 所有 video_prompt 必须包含比例信息
+5. 台词必须融入 video_prompt（角色 + 内容 + 情绪 + 声音）
+6. 根据 Step 2 的自动选择结果设置 `generation_mode` 和 `reference_images`
 
 **完整分镜规范**：See [reference/storyboard-spec.md](reference/storyboard-spec.md)
 **Prompt 编写与一致性规范**：See [reference/prompt-guide.md](reference/prompt-guide.md)
@@ -509,8 +601,29 @@ API 失败 → 判断错误类型 →
   └── 其他错误 → 重试 2 次 → 失败后询问用户
 ```
 
-**降级执行流程**（Path A → Path B）：
+**降级执行流程**（Seedance → Omni 或 Path A → Path B）：
 
+**Seedance 失败处理**（必须先重试）：
+1. **第一次失败** → 重试一次（相同参数，等待 30s）
+2. **重试仍失败** → 告知用户并询问降级选项：
+   ```
+   Seedance 生成失败（已重试 1 次）。
+   
+   可选方案：
+   A. 降级到 Kling-Omni（失去智能切镜，需手动 multi-shot）
+   B. 修改 prompt 后再次尝试 Seedance
+   C. 取消本次生成
+   
+   请选择：
+   ```
+3. 用户选择 A → 执行降级流程
+
+**Seedance → Omni**：
+1. 告知用户降级后果（失去智能切镜，需手动 multi-shot）
+2. 修改 storyboard.json 的 generation_backend 为 `kling-omni`
+3. 每个 shot 单独调用 API（不合并）
+
+**Omni → Kling img2video**：
 1. 告知用户降级后果（角色一致性会降低）
 2. 修改 storyboard.json 的生成模式字段
 3. 先生成所有分镜图（使用 Gemini）
@@ -524,11 +637,24 @@ API 失败 → 判断错误类型 →
 
 | generation_mode | CLI 参数 |
 |----------------|----------|
+| `seedance-video` | `--backend seedance --aspect-ratio {aspect_ratio} --image-list {frame} {ref1} {ref2} ...` |
 | `omni-video` | `--backend kling-omni --aspect-ratio {aspect_ratio} --image-list {ref1} {ref2} ...` |
 | `img2video` | `--aspect-ratio {aspect_ratio} --image {frame_path}` |
 | `text2video` | `--aspect-ratio {aspect_ratio}` |
 
 **重要**：`{aspect_ratio}` 从 `storyboard.json` 的 `aspect_ratio` 字段读取。
+
+**示例（Seedance 模式）**：
+```bash
+# Seedance 智能切镜：分镜图 + 角色参考图
+python video_gen_tools.py video \
+  --backend seedance \
+  --aspect-ratio 16:9 \
+  --prompt "Referencing the scene1_frame composition... @image1..." \
+  --image-list generated/frames/scene1_frame.png materials/personas/xiaomei_ref.jpg \
+  --duration 10 \
+  --output generated/videos/scene1.mp4
+```
 
 **示例（Omni 模式）**：
 ```bash
@@ -540,6 +666,95 @@ python video_gen_tools.py video \
   --image-list materials/personas/sunwukong_ref.png \
   --audio \
   --output generated/videos/scene1_shot1.mp4
+```
+
+### Seedance 执行逻辑（特殊处理）
+
+**当 `generation_backend = "seedance"` 时，执行阶段需特殊处理**：
+
+#### 执行步骤
+
+**Step 1: 按 Scene 分组 shots**
+```
+读取 storyboard.json → 按 scene_id 分组 → 计算每组的总时长
+```
+
+**Step 2: 生成分镜图**
+- 每个 scene 生成一张分镜图（描述该 scene 的关键画面）
+- 使用 Gemini + 角色参考图生成
+
+**Step 3: 生成时间分段 prompt**
+
+**必须使用以下完整格式**：
+
+```
+Referencing the {scene_id}_frame composition for scene layout and character positioning.
+
+@image1（角色参考图），[视角设定] [主题/风格]；
+
+整体：[该 Scene 整体动作概述]
+
+分段动作（{total_duration}s）：
+0-{shot1_duration}s：[shot1 动作描述] + [运镜] + [节奏] + [音效]；
+{shot1_end}-{shot2_end}s：[shot2 动作描述] + [运镜] + [节奏] + [音效]；
+...
+
+保持{比例}构图，不破坏画面比例
+No background music.
+```
+
+**Step 4: 计算 image_urls 顺序**
+- `[0]` = 分镜图
+- `[1+]` = 角色参考图
+
+#### 时间分段计算示例
+
+**storyboard.json**:
+```json
+{
+  "scenes": [{
+    "scene_id": "scene_1",
+    "shots": [
+      {"shot_id": "shot_1", "duration": 3, "description": "摘苹果"},
+      {"shot_id": "shot_2", "duration": 3, "description": "投入雪克杯"},
+      {"shot_id": "shot_3", "duration": 4, "description": "成品特写"}
+    ]
+  }]
+}
+```
+
+**时间分段 prompt**:
+```
+Referencing the scene_1_frame composition for scene layout and character positioning.
+
+@image1，第一人称视角果茶宣传广告；
+
+整体：第一人称视角展示果茶制作全过程，自然流畅。
+
+分段动作（10s）：
+0-3s：摘下红苹果，固定镜头，节奏平稳，苹果碰撞声；
+3-6s：投入雪克杯摇晃，镜头跟随，节奏轻快，冰块碰撞声；
+6-10s：成品特写展示，镜头推进，节奏舒缓，液体流动声；
+
+保持横屏16:9构图，不破坏画面比例
+No background music.
+```
+
+**关键**：
+- 时间必须连续（0-3s, 3-6s, 6-10s）
+- 每个 shot 对应一个时间段
+- 必须包含运镜 + 节奏描述（避免慢动作）
+
+#### 完整 CLI 调用
+
+```bash
+python video_gen_tools.py video \
+  --backend seedance \
+  --aspect-ratio 16:9 \
+  --prompt "Referencing the scene_1_frame composition... @image1... 分段动作（10s）：0-3s：...; 3-6s：...; 6-10s：...; 保持16:9构图 No background music." \
+  --image-list generated/frames/scene_1_frame.png materials/personas/ref.jpg \
+  --duration 10 \
+  --output generated/videos/scene_1.mp4
 ```
 
 ### API Key 管理
@@ -684,6 +899,14 @@ python ~/.claude/skills/video-gen/video_gen_tools.py check
 
 # 视频生成（必须从 storyboard.json 读取 aspect_ratio）
 python ~/.claude/skills/video-gen/video_gen_tools.py video --prompt <描述> --aspect-ratio {aspect_ratio} --output <输出>
+
+# Seedance 智能切镜（分镜图 + 角色参考图）
+python ~/.claude/skills/video-gen/video_gen_tools.py video \
+  --backend seedance \
+  --prompt "Referencing the composition... @image1..." \
+  --image-list generated/frames/scene1_frame.png materials/personas/ref.jpg \
+  --duration 10 \
+  --output generated/videos/scene1.mp4
 
 # 音乐（必须传 --creative，从 creative.json 读取 prompt 和 style）
 python ~/.claude/skills/video-gen/video_gen_tools.py music --creative creative/creative.json --output <输出>

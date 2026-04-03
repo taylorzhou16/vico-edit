@@ -6,12 +6,13 @@
 - 人物注册与引用规范
 - 分镜设计原则与时长限制
 - shot_id 命名规则
-- T2V/I2V/Omni 选择规则
+- T2V/I2V/Omni/Seedance 选择规则
 - 首尾帧生成策略
 - 台词融入 video_prompt
 - Storyboard JSON 格式
 - V3-Omni 两阶段结构
 - 多镜头模式（Kling / Kling Omni）
+- **Seedance 智能切镜模式**
 - Review 检查机制
 - 展示给用户确认
 
@@ -77,9 +78,9 @@
 - `duration`：时长（单位：秒，范围：2-5秒）
 - `shot_type`：景别类型，可选：establishing（全景）/ dialogue（对话）/ action（动作）/ closeup（特写）/ insert（插入镜头）
 - `description`：简要描述
-- `generation_mode`：生成模式，可选：text2video / img2video / omni-video
+- `generation_mode`：生成模式，可选：text2video / img2video / omni-video / seedance-video
 - `multi_shot`：是否为多镜头模式，true / false（与 shot_type 独立）
-- `generation_backend`：后端选择，可选：kling / kling-omni / vidu
+- `generation_backend`：后端选择，可选：kling / kling-omni / vidu / seedance
 - `video_prompt`：视频生成提示词
 - `image_prompt`：图片生成提示词（img2video/omni-video 时使用）
 - `frame_strategy`：首尾帧策略，可选：none / first_frame_only / first_and_last_frame
@@ -147,10 +148,14 @@
 **虚构片/短剧、MV短片**：
 ```
 虚构内容 → 所有镜头强制先生成分镜图
-           ├── 优先 → Kling-3.0-Omni（reference2video）
-           │         └── image_list: [分镜图, 角色参考图]
+           ├── 优先 → Seedance（智能切镜 + 多参考图）
+           │         └── image_urls: [分镜图, 角色参考图...]
+           │         └── 时间分段 prompt 自动触发 multi-shot
            │
-           └── 兜底 → Kling-3.0 或 Vidu Q3 Pro（img2video）
+           ├── 兜底1 → Kling-3.0-Omni（reference2video）
+           │           └── image_list: [分镜图, 角色参考图]
+           │
+           └── 兜底2 → Kling-3.0 或 Vidu Q3 Pro（img2video）
                       └── --image: 分镜图首帧
 ```
 
@@ -165,21 +170,28 @@
 
 | 项目类型 | 素材情况 | 生成模式 | 后端 | 说明 |
 |---------|---------|---------|------|------|
-| 虚构片/短剧 | 有/无角色参考图 | `reference2video` | `kling-omni` | 强制分镜图，Omni 保证一致性 |
-| MV短片 | 有/无角色参考图 | `reference2video` | `kling-omni` | 强制分镜图，音乐驱动 |
+| 虚构片/短剧 | 有/无角色参考图 | `seedance-video` | `seedance` | **优先**：智能切镜 + 多参考图 |
+| 虚构片/短剧 | Seedance 不可用 | `omni-video` | `kling-omni` | 兜底：强制分镜图，Omni 保证一致性 |
+| MV短片 | 有/无角色参考图 | `seedance-video` | `seedance` | **优先**：音乐驱动 + 智能切镜 |
+| MV短片 | Seedance 不可用 | `omni-video` | `kling-omni` | 兜底：强制分镜图 |
 | Vlog/写实类 | 用户真实素材 | `img2video` | `kling` 或 `vidu` | 用户素材首帧控制 |
 | 广告片/宣传片 | 有真实素材 | `img2video` | `kling` 或 `vidu` | 产品/企业素材首帧 |
-| 广告片/宣传片 | 无真实素材 | `reference2video` | `kling-omni` | 纯虚构展示 |
+| 广告片/宣传片 | 无真实素材 | `seedance-video` | `seedance` | **优先**：智能切镜，长镜头 |
+| 广告片/宣传片 | 无真实素材 + Seedance 不可用 | `omni-video` | `kling-omni` | 兜底：纯虚构展示 |
 
 ### 模型与生成路径支持
 
-| 模型 | reference2video | img2video | text2video |
-|------|----------------|-----------|------------|
-| **Kling-3.0-Omni** | ✅ 支持 | ❌ 不支持 | ✅ 支持 |
-| **Kling-3.0** | ❌ 不支持 | ✅ 支持 | ✅ 支持 |
-| **Vidu Q3 Pro** | ❌ 不支持 | ✅ 支持 | ✅ 支持 |
+| 模型 | seedance-video | reference2video | img2video | text2video |
+|------|----------------|-----------------|-----------|------------|
+| **Seedance** | ✅ 支持 | ✅ 支持（image_urls） | ❌ 不支持首帧控制 | ✅ 支持 |
+| **Kling-3.0-Omni** | ❌ 不支持 | ✅ 支持 | ❌ 不支持 | ✅ 支持 |
+| **Kling-3.0** | ❌ 不支持 | ❌ 不支持 | ✅ 支持 | ✅ 支持 |
+| **Vidu Q3 Pro** | ❌ 不支持 | ❌ 不支持 | ✅ 支持 | ✅ 支持 |
 
-**关键**：Kling-3.0-Omni 不支持 img2video（首帧控制），需要首帧控制时不能用 Omni。
+**关键**：
+- **Seedance 不支持首帧精确控制**，分镜图作为参考而非首帧
+- **Kling-3.0-Omni 不支持 img2video（首帧控制）**，需要首帧控制时不能用 Omni
+- **Seedance 时间分段 = 自动 multi-shot**，无需额外参数
 
 ---
 
@@ -726,3 +738,140 @@ Kling 和 Kling Omni 均支持多镜头一镜到底。
 - 纯 `text2video` 镜头（无需参考图，降级无意义）
 - 用户明确表示不接受降级
 - 简单原型，不需要保证角色一致性
+
+---
+
+## Seedance 智能切镜模式
+
+**核心特点**：时间分段 prompt 自动触发 multi-shot，执行阶段合并同 scene 的多个 shots 为一个 API 调用。
+
+**⚠️ 关键限制：时长只能是 5/10/15s（枚举值）**
+
+在 **Phase 3 分镜设计阶段**，选择 Seedance 后端时，必须确保每个 scene 的总时长是 **5、10 或 15 秒**（只能是这三个值，不能是其他时长如 8s、12s）。
+
+### 设计阶段时长规划（Phase 3）
+
+**Seedance 后端时长设计规则**：
+
+| Scene 总时长 | ✅ 允许 | ❌ 不允许 |
+|-------------|--------|----------|
+| 5s | ✓ | - |
+| 10s | ✓ | - |
+| 15s | ✓ | - |
+| 8s, 12s, 18s 等 | - | ✗ （API 不支持） |
+
+**设计流程**：
+```
+选择 Seedance → 确定 scene 总时长（必须是 5/10/15）→ 分配 shots 时长
+```
+
+**示例**：
+- 目标 15s scene → shots: 3s + 3s + 4s + 5s = 15s ✓
+- 目标 10s scene → shots: 3s + 3s + 4s = 10s ✓
+- 目标 18s scene → ✗ 不允许，需拆分为 15s + 3s（第二个片段需单独处理）
+
+### 设计原则
+
+**Shot 结构保持不变**：Seedance 只在执行阶段合并，不改变 storyboard 的 `scenes → shots` 结构。
+
+| 模型 | 执行方式 |
+|------|---------|
+| Kling/Vidu/Omni | 每个 shot 单独调用 API |
+| **Seedance** | 同 scene 多 shots 合并为一个 API 调用（时间分段 prompt） |
+
+### Scene → 视频片段划分规则
+
+| Scene 时长 | Shot 数量 | 视频片段规划 |
+|-----------|----------|-------------|
+| ≤15s | 任意数量（如 3-5 个 shot） | **单个视频片段**，时间分段覆盖所有 shot |
+| 16-30s | 较多（如 6-10 个 shot） | **2-3 个视频片段**，分段覆盖（如 15s + 15s） |
+| >30s | 很多（如 >10 个 shot） | **3+ 个视频片段**，分段覆盖 |
+| Scene 切换 | - | **各自独立视频片段**，不跨 Scene 合并 |
+
+### 执行阶段处理流程
+
+**示例**：Scene 1 包含 4 个 shots（总时长 15s）
+
+```json
+{
+  "scene_id": "scene_1",
+  "shots": [
+    {"shot_id": "scene1_shot1", "duration": 3, "description": "摘苹果"},
+    {"shot_id": "scene1_shot2", "duration": 3, "description": "投入雪克杯"},
+    {"shot_id": "scene1_shot3", "duration": 4, "description": "成品特写"},
+    {"shot_id": "scene1_shot4", "duration": 5, "description": "举杯展示"}
+  ]
+}
+```
+
+**Seedance 执行逻辑**：
+
+1. 识别 `generation_backend = "seedance"`
+2. 将 scene_1 的 4 个 shots（总 15s）合并为一个 API 调用
+3. 生成分镜图（每个视频片段一张）
+4. 生成时间分段 prompt：
+   ```
+   0-3s：摘苹果...；
+   3-6s：投入雪克杯...；
+   6-10s：成品特写...；
+   10-15s：举杯展示...；
+   ```
+5. 调用 Seedance API
+
+### 时间分段 Prompt 格式
+
+```
+Referencing the {segment_id}_frame composition for scene layout and character positioning.
+
+@image1（角色参考图），[视角设定] [主题/风格]；
+
+整体：[镜头整体动作概述]
+
+分段动作（{duration}s）：
+0-Xs：[场景] + [动作] + [运镜] + [节奏] + [音效/台词]；
+X-Xs：[切镜] + [场景] + [动作] + [运镜] + [节奏] + [音效/台词]；
+...
+
+保持{比例}构图，不破坏画面比例
+{BGM约束}
+```
+
+### image_urls 顺序约定
+
+| index | 用途 | 引用方式 |
+|-------|------|---------|
+| `image_urls[0]` | 分镜图 | `Referencing the {segment_id}_frame composition...` |
+| `image_urls[1]` | 角色参考图 1 | `@image1` |
+| `image_urls[2]` | 角色参考图 2 | `@image2` |
+
+### Seedance Storyboard 标注示例
+
+```json
+{
+  "shot_id": "scene1_shot1",
+  "duration": 3,
+  "generation_mode": "seedance-video",
+  "generation_backend": "seedance",
+  "video_prompt": "你的手摘下一颗带晨露的阿克苏红苹果，固定镜头，节奏平稳，轻脆的苹果碰撞声",
+  "reference_images": [
+    "generated/frames/scene1_frame.png",
+    "materials/personas/xiaomei_ref.jpg"
+  ],
+  "frame_strategy": "none",
+  "seedance_merge_info": {
+    "merged_shots": ["scene1_shot1", "scene1_shot2", "scene1_shot3", "scene1_shot4"],
+    "total_duration": 15,
+    "segment_index": 0
+  }
+}
+```
+
+### 限制与注意事项
+
+| 限制 | 说明 |
+|------|------|
+| 时长仅支持 5/10/15s | 只能是这三个枚举值，不能是其他时长 |
+| 最高 720p | 需要 1080p 时用 Kling/Vidu |
+| 无首帧精确控制 | 分镜图是参考，不是首帧 |
+| 无参考音频 | 无法使用 audio_urls 参数 |
+| 图片引用语法 | 使用 `@imageN`（非 `<<<image_N>>>`） |

@@ -775,6 +775,121 @@ async def image_to_video(
         return {"success": False, "error": msg}
 
 
+# ============== 旁白合成 ==============
+
+async def add_narration(
+    video: str,
+    output: str,
+    storyboard: str = None,
+    narration_dir: str = None,
+    narration_volume: float = 1.0,
+    video_volume: float = 1.0
+) -> Dict[str, Any]:
+    """
+    将旁白音频按时间点合成到视频中
+
+    Args:
+        video: 输入视频
+        output: 输出视频
+        storyboard: storyboard.json 路径（包含 narration_segments）
+        narration_dir: 旁白音频目录
+        narration_volume: 旁白音量
+        video_volume: 原视频音量
+    """
+    if not os.path.exists(video):
+        return {"success": False, "error": f"视频不存在: {video}"}
+
+    # 读取 storyboard.json 获取旁白时间点
+    narration_segments = []
+    if storyboard and os.path.exists(storyboard):
+        with open(storyboard, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            narration_segments = data.get("narration_segments", [])
+
+    if not narration_segments:
+        logger.warning("⚠️ 没有找到 narration_segments，直接复制视频")
+        import shutil
+        shutil.copy(video, output)
+        return {"success": True, "output": output, "warning": "没有旁白分段"}
+
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+
+    # 构建 filter_complex
+    # 输入: [0] 视频, [1-N] 旁白音频
+    inputs = ["-i", video]
+    filter_parts = []
+
+    # 构建音频混合
+    audio_mix_parts = [f"[0:a]volume={video_volume}[video]"]
+
+    for i, seg in enumerate(narration_segments):
+        audio_file = None
+        if narration_dir:
+            # 尝试多种命名格式
+            seg_id = seg.get("segment_id", str(i+1))
+            possible_paths = [
+                os.path.join(narration_dir, f"narr_{seg_id}.mp3"),
+                os.path.join(narration_dir, f"narration_{seg_id}.mp3"),
+                os.path.join(narration_dir, f"{seg_id}.mp3"),
+            ]
+            for p in possible_paths:
+                if os.path.exists(p):
+                    audio_file = p
+                    break
+
+        if not audio_file:
+            logger.warning(f"⚠️ 未找到旁白音频: segment {seg_id}")
+            continue
+
+        inputs.extend(["-i", audio_file])
+
+        # 获取时间范围
+        time_range = seg.get("overall_time_range", "0-5")
+        if isinstance(time_range, str) and "-" in time_range:
+            start, end = time_range.split("-")
+            start = float(start)
+        else:
+            start = 0
+
+        # 延迟音频到正确的时间点
+        audio_idx = len(inputs) // 2  # 当前音频的输入索引
+        filter_parts.append(f"[{audio_idx}:a]adelay={int(start*1000)}|{int(start*1000)},volume={narration_volume}[narr{i}]")
+        audio_mix_parts.append(f"[narr{i}]")
+
+    # 混合所有音频
+    if len(audio_mix_parts) > 1:
+        # 有旁白音频
+        filter_parts.append(f"{''.join(audio_mix_parts)}amix=inputs={len(audio_mix_parts)}:duration=first[aout]")
+        filter_complex = ";".join(filter_parts)
+
+        cmd = [
+            "ffmpeg", "-y",
+            *inputs,
+            "-filter_complex", filter_complex,
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            output
+        ]
+    else:
+        # 没有旁白音频，直接复制
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video,
+            "-c", "copy",
+            output
+        ]
+
+    success, msg = await run_ffmpeg(cmd)
+
+    if success:
+        logger.info(f"✅ 旁白合成完成: {output}")
+        return {"success": True, "output": output, "segments": len(narration_segments)}
+    else:
+        return {"success": False, "error": msg}
+
+
 # ============== 命令行入口 ==============
 
 async def cmd_concat(args):
@@ -921,6 +1036,20 @@ async def cmd_image(args):
     return 0 if result.get("success") else 1
 
 
+async def cmd_narration(args):
+    """旁白合成命令"""
+    result = await add_narration(
+        video=args.video,
+        output=args.output,
+        storyboard=args.storyboard,
+        narration_dir=args.narration_dir,
+        narration_volume=args.narration_volume,
+        video_volume=args.video_volume
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0 if result.get("success") else 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Vico Editor - FFmpeg 视频剪辑命令行工具",
@@ -989,6 +1118,15 @@ def main():
     image_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径，自动读取 aspect_ratio")
     image_parser.add_argument("--zoom", action="store_true", help="添加 Ken Burns 缩放效果")
 
+    # narration 子命令
+    narration_parser = subparsers.add_parser("narration", help="旁白合成")
+    narration_parser.add_argument("--video", "-v", required=True, help="输入视频")
+    narration_parser.add_argument("--output", "-o", required=True, help="输出视频路径")
+    narration_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径（包含 narration_segments）")
+    narration_parser.add_argument("--narration-dir", "-n", help="旁白音频目录")
+    narration_parser.add_argument("--narration-volume", type=float, default=1.0, help="旁白音量")
+    narration_parser.add_argument("--video-volume", type=float, default=1.0, help="原视频音量")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1005,6 +1143,7 @@ def main():
         "speed": cmd_speed,
         "trim": cmd_trim,
         "image": cmd_image,
+        "narration": cmd_narration,
     }
 
     return asyncio.run(commands[args.command](args))

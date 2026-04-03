@@ -2,8 +2,9 @@
 
 ## 目录
 
-- 三种后端能力对比
+- 四种后端能力对比
 - 后端选择决策树
+- Seedance 智能切镜模式
 - 自动选择逻辑
 - 人物参考图两条路径
 - **路径 A：Kling Omni（推荐）**
@@ -12,22 +13,25 @@
 
 ---
 
-## 三种后端能力对比
+## 四种后端能力对比
 
-| 能力 | Vidu | Kling | Kling Omni |
-|------|------|-------|------------|
-| **后端名** | `vidu` | `kling` | `kling-omni` |
-| **文生视频** | 5-10s | 3-15s | 3-15s |
-| **图生视频** | 单图 | 首帧图（精确控制） | 用 image_list 代替 |
-| **image_list 多参考图** | -- | -- | `<<<image_1>>>` 引用 |
-| **multi_shot 多镜头** | -- | intelligence / customize | intelligence / customize |
-| **首尾帧控制** | -- | `--image` + `--tail-image` | -- |
-| **音画同出** | -- | `--audio` | `--audio` |
-| **最佳场景** | 简单快速、兜底 | 首帧精确控制、场景一致 | 角色一致性、多人物 |
+| 能力 | Vidu | Kling | Kling Omni | **Seedance** |
+|------|------|-------|------------|--------------|
+| **后端名** | `vidu` | `kling` | `kling-omni` | `seedance` |
+| **文生视频** | 5-10s | 3-15s | 3-15s | **5/10/15s** |
+| **图生视频** | 单图 | 首帧图（精确控制） | 用 image_list 代替 | 分镜图 + 参考图 |
+| **image_list 多参考图** | -- | -- | `<<<image_1>>>` 引用 | **`@image1` 引用（最多 9 张）** |
+| **智能切镜** | -- | multi-shot 参数控制 | multi-shot 参数控制 | **时间分段 prompt 自动触发** |
+| **首尾帧控制** | -- | `--image` + `--tail-image` | -- | --（分镜图作为参考） |
+| **音画同出** | -- | `--audio` | `--audio` | **✓ 默认生成音频** |
+| **最高分辨率** | 1080p | 1080p | 1080p | **720p** ⚠️ |
+| **最佳场景** | 简单快速、兜底 | 首帧精确控制、场景一致 | 角色一致性、多人物 | **虚构片/短剧、智能切镜** |
 
 **重要区别**：
 - Kling `--image` 是**首帧图**（视频从此图开始）
 - Kling Omni `--image-list` 是**参考图**（人物保持一致）
+- **Seedance 时间分段 = 自动 multi-shot**：无需额外参数，时间分段 prompt 自动触发智能切镜
+- **Seedance 分镜图是参考**：不是首帧精确控制，而是视觉风格参考
 
 ---
 
@@ -55,12 +59,124 @@
 
 | 场景 | 后端 | 关键参数 |
 |------|------|---------|
-| **剧情视频，场景+角色都要** | **Omni** | `--image-list frame.png ref.jpg` |
+| **虚构片/短剧，智能切镜** | **Seedance** | `--backend seedance --image-list frame.png ref.jpg` |
+| **广告片（无真实素材）** | **Seedance** | 时间分段 prompt + 分镜图 |
+| 剧情视频，场景+角色都要 | Omni | `--image-list frame.png ref.jpg` |
 | 快速原型、人物一致优先 | Omni | `--image-list ref.jpg` |
 | 场景精确优先、角色可波动 | Kling | `--image first_frame.png` |
 | 需要首尾帧动画 | Kling | `--image first.png --tail-image last.png` |
 | 多镜头剧情 + 角色一致 | Omni | `--image-list ref.jpg --multi-shot` |
 | 简单无人场景 / 快速原型 | Kling（默认）或 vidu | 无需特殊参数 |
+
+---
+
+## Seedance 智能切镜模式
+
+**核心特点**：时间分段 prompt 自动触发 multi-shot 智能切镜，无需额外参数。
+
+### API 参数
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `model` | `"seedance"` | 固定值 |
+| `task_type` | `"seedance-2-fast-preview"` / `"seedance-2-preview"` | 快速 / 高质量 |
+| `prompt` | 文本描述 | 支持 `@imageN` 引用图片，支持时间分段 |
+| `duration` | 5 / 10 / 15 | 秒数（仅支持这三个枚举值） |
+| `aspect_ratio` | 16:9/9:16/4:3/3:4 | 四种比例 |
+| `image_urls` | 数组 | 最多 9 张参考图 |
+
+### 输出规格
+
+| 规格 | 值 |
+|------|-----|
+| 时长 | 5/10/15s（仅三个枚举值） |
+| 分辨率 | 480p / 720p（最高 720p）⚠️ |
+| 音频 | 自动生成（AAC 立体声） |
+
+### 时间分段 Prompt 语法
+
+**格式**：
+```
+Referencing the {segment_id}_frame composition for scene layout and character positioning.
+
+@image1（角色参考图），[视角设定] [主题/风格]；
+
+整体：[镜头整体动作概述]
+
+分段动作（{duration}s）：
+0-Xs：[场景] + [动作] + [运镜] + [节奏] + [音效/台词]；
+X-Xs：[切镜] + [场景] + [动作] + [运镜] + [节奏] + [音效/台词]；
+...
+
+保持{比例}构图，不破坏画面比例
+{BGM约束}
+```
+
+**示例**：
+```
+Referencing the scene_1_seg_1_frame composition for scene layout and character positioning.
+
+@image1，第一人称视角果茶宣传广告；Element_Chuyue 为女性角色；
+
+整体：第一人称视角展示果茶制作全过程，从摘苹果到成品呈现，自然流畅。
+
+分段动作（10s）：
+0-2s：你的手摘下一颗带晨露的阿克苏红苹果，固定镜头，节奏平稳，轻脆的苹果碰撞声；
+2-4s：快速切镜，你的手将苹果块投入雪克杯，加入冰块与茶底，用力摇晃，镜头轻微跟随，节奏轻快，冰块碰撞声卡点鼓点；
+4-6s：第一人称成品特写，分层果茶倒入透明杯，你的手轻挤奶盖，镜头缓慢推进，节奏平稳，液体流动声；
+6-8s：镜头推进，杯身贴上粉红包标，展示分层纹理，节奏舒缓，轻柔背景音；
+8-10s：第一人称手持举杯，@image2，果茶举到镜头前，固定镜头，节奏平稳，杯身标签清晰可见，背景音：「来一口鲜爽」；
+
+保持横屏16:9构图，不破坏画面比例
+背景音：「鲜切现摇」「来一口鲜爽」，女声音色。
+```
+
+### image_urls 顺序约定
+
+| index | 用途 | 引用方式 |
+|-------|------|---------|
+| `image_urls[0]` | 分镜图 | `Referencing the {segment_id}_frame composition...` |
+| `image_urls[1]` | 角色参考图 1 | `@image1` |
+| `image_urls[2]` | 角色参考图 2 | `@image2` |
+| ... | ... | ... |
+| `image_urls[9]` | 角色参考图 9（最多） | `@image9` |
+
+**关键点**：
+1. **分镜图是参考，不是首帧精确控制** — 提供整体视觉风格参考
+2. **角色参考图用 `<<<image_N>>>` 引用** — 与 Kling-Omni 统一语法
+3. **时间分段自动触发智能切镜** — 无需 `--multi-shot` 参数
+4. **最高 720p** — 需要 1080p 时使用 Kling 或 Vidu
+
+### CLI 使用示例
+
+```bash
+# Text-to-Video（纯文字生成）
+python video_gen_tools.py video \
+  --backend seedance \
+  --prompt "时间分段描述..." \
+  --duration 10 \
+  --aspect-ratio 16:9 \
+  --output output.mp4
+
+# Image-to-Video（分镜图 + 角色参考图）
+python video_gen_tools.py video \
+  --backend seedance \
+  --prompt "Referencing the composition... @image1..." \
+  --image-list generated/frames/scene1_frame.png materials/personas/xiaomei_ref.jpg \
+  --duration 10 \
+  --output output.mp4
+```
+
+### 推荐场景
+
+| 场景 | 优先后端 | 兜底后端 | 原因 |
+|------|---------|---------|------|
+| **虚构片/短剧** | **Seedance** | Kling-Omni | 智能切镜 + 多参考图，角色一致性 |
+| **广告片（无真实素材）** | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
+| **广告片（有真实素材）** | Kling-3.0 / Vidu | — | 首帧精确控制，真实素材 |
+| **MV短片** | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
+| **Vlog/写实类** | Kling-3.0 | Vidu | 首帧精确控制，不走 Seedance |
+| **超短镜头（< 5s）** | Kling / Vidu | — | Seedance 最短 5s |
 
 ---
 
@@ -78,8 +194,8 @@
 | 条件 | Provider | 说明 |
 |------|----------|------|
 | 有 KLING_ACCESS_KEY + KLING_SECRET_KEY | `official` | Kling 官方 API |
-| 有 YUNWU_API_KEY | `yunwu` | yunwu.ai 代理 |
 | 有 FAL_API_KEY | `fal` | fal.ai 代理 |
+| 有 YUNWU_API_KEY | `yunwu` | yunwu.ai 代理 |
 
 **手动指定 provider**：
 

@@ -1,0 +1,12 @@
+{
+  "SKILL.md": "c8d2e21454e20574c9b964bf9279f0cff49232f8b2be63ce44cb2e4cfa873538",
+  "README.md": "e3d4cf62116aabb8384f0a972a0d08240ea7d3cee7db0056a8a34c674e81b31e",
+  "reference/storyboard-spec.md": "d2e4dc811c9d8344acb652cf83223f3d5d2ba3f36b4efdf63a8a1234cd6c1d93",
+  "reference/backend-guide.md": "d9ee7803303696759528a386595bed03e39937e79f61a1379642a9690b8058bd",
+  "reference/prompt-guide.md": "5f102563c5e970d4eb09cf196656c022e2cc4844215d083284a9733390860b31",
+  "reference/api-reference.md": "d12a06e296b3e1eac0b1d8c8ac6e83a8e2d8a16bf45a7a80b60c55ee56117baf",
+  "video_gen_tools.py": "3b6250fef6a9ad268aa4aca2e63a0b2e5948633e445522c68d328fecf651645f",
+  "video_gen_editor.py": "9dc428a101a7a10a7ed072a16e9a4f76ddf49c85ceafd8fab66e0ff7b6381b5a",
+  "config.json.example": "b073e0e1e633f5ff8d2f12ad6d997981e9042f20250d7109c68ebc692c5f9979",
+  "requirements.txt": "bff057979879bf8d16acdc64317c6f2ac3dba4f1c4cd8df5ccd2a592fa804c95"
+}
