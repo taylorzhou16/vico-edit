@@ -186,7 +186,7 @@ export VOLCENGINE_TTS_ACCESS_TOKEN="your-token"
 # fal.ai API - 用于图片生成（备用）
 export FAL_API_KEY="your-fal-api-key"
 
-# Compass API - 用于图片生成（Shopee 内部，最高优先级）
+# Compass API - 用于图片生成（最高优先级）
 export COMPASS_API_KEY="your-compass-api-key"
 
 # Seedance API - 用于 Seedance 视频生成（通过 piapi.ai 代理）
@@ -196,7 +196,6 @@ export SEEDANCE_API_KEY="your-seedance-api-key"
 **注意**：
 - **图片生成 Provider 优先级**：compass → fal → yunwu
 - **视频生成 Provider 优先级**：official → fal → yunwu
-- Compass 仅限 Shopee 内部使用，外部用户请用 fal 或 yunwu
 
 ## 🔄 工作流程
 

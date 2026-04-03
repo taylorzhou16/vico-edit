@@ -199,7 +199,7 @@ class Config:
 
     GEMINI_IMAGE_URL: str = "https://yunwu.ai/v1beta/models/gemini-3.1-flash-image-preview:generateContent"
 
-    # Compass API (Shopee internal)
+    # Compass API
     @property
     def COMPASS_API_KEY(self) -> str:
         return self.get("COMPASS_API_KEY", "")
@@ -2372,7 +2372,7 @@ class FalImageClient:
 
 
 class CompassImageClient:
-    """Gemini 图片生成客户端（通过 Shopee Compass API）"""
+    """Gemini 图片生成客户端（通过 Compass API）"""
 
     STYLE_PRESETS = {
         "cinematic": "cinematic style, film grain, dramatic lighting, movie still",
@@ -3415,7 +3415,7 @@ async def cmd_image(args):
         aspect_ratio = "9:16"  # 最终默认值
         logger.info(f"📐 使用默认宽高比: {aspect_ratio}")
 
-    # compass provider (Shopee internal)
+    # compass provider
     if provider == 'compass':
         if not Config.COMPASS_API_KEY:
             print(json.dumps({
