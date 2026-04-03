@@ -86,7 +86,7 @@ python ~/.claude/skills/video-gen/video_gen_editor.py color --video <视频> --p
 
 | 变量 | 用途 | 何时需要 |
 |------|------|---------|
-| COMPASS_API_KEY | Gemini 图片生成 | 图片生成时（最高优先级） |
+| COMPASS_API_KEY | Gemini 图片生成 + Gemini TTS | 图片/TTS 生成时（最高优先级） |
 | FAL_API_KEY | Gemini 图片生成 + Kling-Omni 视频（fal.ai 代理） | 图片/视频生成时（备用） |
 | YUNWU_API_KEY | Vidu/Kling/Kling-Omni 视频生成 + 图片生成（yunwu 代理） | 生成视频/图片时（最低优先级备用） |
 | KLING_ACCESS_KEY | Kling 视频生成 Access Key | 使用 Kling/Kling Omni 官方 API 时 |

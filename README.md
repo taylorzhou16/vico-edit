@@ -226,6 +226,28 @@ export SEEDANCE_API_KEY="your-seedance-api-key"
 
 ## 📋 更新日志
 
+### v1.5.1 (2026-04-03)
+🎤 **Gemini TTS 集成**
+
+#### 新增功能
+- ✨ **GeminiTTSClient** — 新增 Gemini TTS 客户端（通过 Compass API）
+  - 优先级高于火山引擎 TTS
+  - 支持风格提示（prompt 参数）
+  - 支持 inline 情感标注：`[brightly]`, `[sigh]`, `[pause]`
+  - 音色：Kore/Aoede/Charon/Orus 等
+
+#### 音色预设
+| 预设 | 音色 | 性别 |
+|------|------|------|
+| `female_narrator` | Kore | 女声 |
+| `female_gentle` | Aoede | 女声（清亮）|
+| `female_soft` | Zephyr | 女声（柔和）|
+| `male_narrator` | Charon | 男声 |
+| `male_warm` | Orus | 男声（稳重）|
+
+#### TTS 优先级
+- **Gemini TTS**（COMPASS_API_KEY）→ 火山引擎 TTS（VOLCENGINE_TTS_*）
+
 ### v1.5.0 (2026-04-03)
 🎬 **Seedance 智能切镜 + fal 图片生成**
 

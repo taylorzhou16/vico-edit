@@ -2170,6 +2170,114 @@ class TTSClient:
             return {"success": False, "error": str(e)}
 
 
+# ============== Gemini TTS（通过 Compass API）==============
+
+class GeminiTTSClient:
+    """Gemini TTS 客户端（通过 Compass API）"""
+
+    # Gemini TTS 音色
+    VOICE_TYPES = {
+        # 女声
+        "female_narrator": ("Kore", "cmn-CN"),      # 标准女声
+        "female_gentle": ("Aoede", "cmn-CN"),        # 清亮女声
+        "female_soft": ("Zephyr", "cmn-CN"),         # 柔和女声
+        "female_bright": ("Leda", "cmn-CN"),         # 明亮女声
+        # 男声
+        "male_narrator": ("Charon", "cmn-CN"),       # 标准男声
+        "male_warm": ("Orus", "cmn-CN"),             # 稳重男声
+        "male_deep": ("Fenrir", "cmn-CN"),           # 深沉男声
+        "male_bright": ("Puck", "cmn-CN"),           # 明亮男声
+    }
+
+    async def synthesize(
+        self,
+        text: str,
+        output: str,
+        voice: str = "female_narrator",
+        emotion: str = None,
+        speed: float = 1.0,
+        prompt: str = None,
+        language_code: str = "cmn-CN",
+    ) -> Dict[str, Any]:
+        """合成语音
+
+        Args:
+            text: 要朗读的文本，支持 inline 情感标注如 [brightly], [sigh], [pause]
+            output: 输出文件路径
+            voice: 音色名称或预设（female_narrator, male_narrator 等）
+            emotion: 已废弃，请使用 prompt 或 inline 标注
+            speed: 语速（Gemini TTS 暂不支持）
+            prompt: 风格指令，控制口音/情感/语气/人设
+            language_code: 语言代码（cmn-CN, en-US, ja-JP 等）
+        """
+        from google.cloud import texttospeech
+        from google.api_core import client_options
+
+        if not Config.COMPASS_API_KEY:
+            return {
+                "success": False,
+                "error": "COMPASS_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 COMPASS_API_KEY"
+            }
+
+        # 获取音色配置
+        voice_name = voice
+        lang_code = language_code
+        if voice in self.VOICE_TYPES:
+            voice_name, lang_code = self.VOICE_TYPES[voice]
+
+        logger.info(f"📤 Gemini TTS合成: {text[:30]}... (voice: {voice_name})")
+
+        try:
+            # 创建客户端
+            client = texttospeech.TextToSpeechClient(
+                client_options=client_options.ClientOptions(
+                    api_endpoint=Config.COMPASS_IMAGE_URL.rsplit('/compass-api', 1)[0] + '/compass-api/v1',
+                    api_key=Config.COMPASS_API_KEY,
+                ),
+                transport="rest",
+            )
+
+            # 构建输入
+            synthesis_input = texttospeech.SynthesisInput(text=text)
+            if prompt:
+                synthesis_input = texttospeech.SynthesisInput(text=text, prompt=prompt)
+
+            # 音色配置
+            voice_params = texttospeech.VoiceSelectionParams(
+                language_code=lang_code,
+                name=voice_name,
+                model_name="gemini-2.5-flash-tts",
+            )
+
+            # 音频配置
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3,
+            )
+
+            # 合成语音
+            response = client.synthesize_speech(
+                input=synthesis_input,
+                voice=voice_params,
+                audio_config=audio_config,
+            )
+
+            # 保存文件
+            Path(output).parent.mkdir(parents=True, exist_ok=True)
+            with open(output, "wb") as f:
+                f.write(response.audio_content)
+
+            # 估算时长（约 15KB/秒）
+            duration_ms = int(len(response.audio_content) / 15 * 1000)
+            logger.info(f"✅ Gemini TTS已保存: {output} (约 {duration_ms}ms)")
+
+            return {"success": True, "output": output, "duration_ms": duration_ms}
+
+        except Exception as e:
+            logger.error(f"❌ Gemini TTS失败: {e}")
+            return {"success": False, "error": str(e)}
+
+
 # ============== Gemini 图片生成（通过 Yunwu API）==============
 
 class ImageClient:
@@ -3361,16 +3469,46 @@ async def cmd_music(args):
 
 
 async def cmd_tts(args):
-    """TTS合成命令"""
+    """TTS合成命令 - 优先使用 Gemini TTS，兜底使用火山引擎 TTS"""
+    # 优先使用 Gemini TTS（通过 Compass API）
+    if Config.COMPASS_API_KEY:
+        logger.info("🔧 使用 Gemini TTS (Compass)")
+        client = GeminiTTSClient()
+        result = await client.synthesize(
+            text=args.text,
+            output=args.output,
+            voice=args.voice,
+            emotion=args.emotion,
+            speed=args.speed,
+        )
+
+        if result.get("success"):
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 0
+        else:
+            print(f"Gemini TTS 失败: {result.get('error')}")
+            # 尝试降级到火山引擎
+            if Config.VOLCENGINE_TTS_APP_ID and Config.VOLCENGINE_TTS_TOKEN:
+                print("降级到火山引擎 TTS...")
+            else:
+                print(json.dumps({
+                    "success": False,
+                    "error": "Gemini TTS 失败且火山引擎 TTS 未配置",
+                    "hint": "请配置 COMPASS_API_KEY 或 VOLCENGINE_TTS 凭证"
+                }, indent=2, ensure_ascii=False))
+                return 1
+
+    # 兜底使用火山引擎 TTS
     if not Config.VOLCENGINE_TTS_APP_ID or not Config.VOLCENGINE_TTS_TOKEN:
         print(json.dumps({
             "success": False,
-            "error": "火山引擎 TTS 凭证未配置",
-            "hint": "请设置环境变量:\n  export VOLCENGINE_TTS_APP_ID='your-app-id'\n  export VOLCENGINE_TTS_ACCESS_TOKEN='your-token'",
-            "get_key": "访问 https://www.volcengine.com/docs/656/79823 获取凭证"
+            "error": "TTS 凭证未配置",
+            "hint": "请配置 COMPASS_API_KEY（推荐）或火山引擎 TTS 凭证",
+            "get_key": "COMPASS_API_KEY 优先级更高"
         }, indent=2, ensure_ascii=False))
         return 1
 
+    logger.info("🔧 使用火山引擎 TTS")
     client = TTSClient()
     result = await client.synthesize(
         text=args.text,
