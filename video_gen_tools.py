@@ -4358,6 +4358,16 @@ async def cmd_check(args):
 
     # Environment variables (informational only)
     env_vars = {
+        "SEEDANCE_API_KEY": {
+            "value": Config.SEEDANCE_API_KEY,
+            "purpose": "Seedance 视频生成（piapi.ai 代理）",
+            "get_key": "https://piapi.ai"
+        },
+        "COMPASS_API_KEY": {
+            "value": Config.COMPASS_API_KEY,
+            "purpose": "Veo3 视频 + Gemini 图片 + Gemini TTS（Compass 代理）",
+            "get_key": "https://compass.llm.shopee.io"
+        },
         "YUNWU_API_KEY": {
             "value": Config.YUNWU_API_KEY,
             "purpose": "Vidu 视频生成 + Gemini 图片生成",
@@ -4408,6 +4418,7 @@ async def cmd_check(args):
     # 检查是否至少有一个视频 provider 可用
     has_video_provider = any([
         Config.SEEDANCE_API_KEY,
+        Config.COMPASS_API_KEY,
         Config.KLING_ACCESS_KEY and Config.KLING_SECRET_KEY,
         Config.FAL_API_KEY,
         Config.YUNWU_API_KEY,
