@@ -205,8 +205,9 @@ class Config:
     def COMPASS_API_KEY(self) -> str:
         return self.get("COMPASS_API_KEY", "")
 
-    COMPASS_IMAGE_URL: str = "https://compass.llm.shopee.io/compass-api/v1/publishers/google/models/gemini-3.1-flash-image-preview:generateContent"
-    COMPASS_VIDEO_URL: str = "https://compass.llm.shopee.io/compass-api/v1/publishers/google/models/veo-3.1-generate-001"
+    COMPASS_BASE_URL: str = "http://inner-api.us.migoo.ai/inbeeai/compass-api/v1"
+    COMPASS_IMAGE_URL: str = f"{COMPASS_BASE_URL}/publishers/google/models/gemini-3.1-flash-image-preview:generateContent"
+    COMPASS_VIDEO_URL: str = f"{COMPASS_BASE_URL}/publishers/google/models/veo-3.1-generate-001"
 
     # Kling API
     @property
@@ -2702,7 +2703,7 @@ class GeminiTTSClient:
             # 创建客户端
             client = texttospeech.TextToSpeechClient(
                 client_options=client_options.ClientOptions(
-                    api_endpoint=Config.COMPASS_IMAGE_URL.rsplit('/compass-api', 1)[0] + '/compass-api/v1',
+                    api_endpoint=Config.COMPASS_BASE_URL,
                     api_key=Config.COMPASS_API_KEY,
                 ),
                 transport="rest",
