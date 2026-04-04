@@ -4465,8 +4465,8 @@ def main():
     video_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径，自动读取 aspect_ratio")
     video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
-    video_parser.add_argument("--provider", choices=["official", "yunwu", "fal"], default=None,
-                              help="API provider (默认自动选择; vidu 仅支持 yunwu)")
+    video_parser.add_argument("--provider", choices=["official", "yunwu", "fal", "compass"], default=None,
+                              help="API provider (默认自动选择; vidu 仅支持 yunwu; veo3 仅支持 compass)")
     video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni", "seedance", "veo3"], default="kling",
                               help="视频生成后端 (默认 kling; vidu 为兜底; kling-omni 用于参考图; seedance 用于智能切镜; veo3 用于 Compass Veo3)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro"], default="std",
