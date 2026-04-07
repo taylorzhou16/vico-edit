@@ -403,9 +403,14 @@ def validate_storyboard(storyboard_path: str) -> Dict[str, Any]:
 
 # ============== Seedance Prompt 自动组装 ==============
 
-def build_seedance_prompt(scene: Dict[str, Any], storyboard: Dict[str, Any]) -> tuple:
+def build_seedance_prompt(scene: Dict[str, Any], storyboard: Dict[str, Any], storyboard_path: str = None) -> tuple:
     """
     根据 storyboard 的 scene 自动组装 Seedance 时间分段 prompt。
+
+    Args:
+        scene: scene 对象
+        storyboard: 完整 storyboard 对象
+        storyboard_path: storyboard.json 文件路径（用于计算绝对路径）
 
     Returns:
         (prompt: str, image_urls: list[str], duration: int)
@@ -413,6 +418,23 @@ def build_seedance_prompt(scene: Dict[str, Any], storyboard: Dict[str, Any]) -> 
     scene_id = scene.get("scene_id", "scene_1")
     shots = scene.get("shots", [])
     aspect_ratio = storyboard.get("aspect_ratio", "16:9")
+
+    # 计算 storyboard 所在目录（用于转换相对路径为绝对路径）
+    project_dir = None
+    if storyboard_path:
+        project_dir = os.path.dirname(os.path.dirname(storyboard_path))  # storyboard/ 的父目录
+
+    def resolve_path(path: str) -> str:
+        """将相对路径转换为绝对路径"""
+        if not path or path.startswith(('http://', 'https://')):
+            return path
+        if os.path.isabs(path):
+            return path
+        if project_dir:
+            abs_path = os.path.join(project_dir, path)
+            if os.path.exists(abs_path):
+                return abs_path
+        return path
 
     # --- 计算总时长 ---
     total_duration = sum(s.get("duration", 0) for s in shots)
@@ -436,7 +458,7 @@ def build_seedance_prompt(scene: Dict[str, Any], storyboard: Dict[str, Any]) -> 
         tag = char_mapping.get(eid)
         refs = char.get("reference_images", [])
         if tag and refs:
-            scene_char_refs.append(refs[0])
+            scene_char_refs.append(resolve_path(refs[0]))
             scene_char_tags.append((tag, char.get("name", ""), eid))
 
     # --- 查找分镜图 ---
@@ -446,12 +468,12 @@ def build_seedance_prompt(scene: Dict[str, Any], storyboard: Dict[str, Any]) -> 
         first_refs = shots[0]["reference_images"]
         for ref in first_refs:
             if "frame" in ref.lower() or "frames" in ref.lower():
-                frame_image = ref
+                frame_image = resolve_path(ref)
                 break
         if not frame_image:
             # 第一张如果不是角色参考图，当作分镜图
             if first_refs[0] not in scene_char_refs:
-                frame_image = first_refs[0]
+                frame_image = resolve_path(first_refs[0])
 
     # --- 组装 image_urls ---
     image_urls = []
@@ -3811,7 +3833,7 @@ async def cmd_video(args):
                     return 1
 
                 # 自动组装 prompt、image_urls、duration
-                prompt, image_urls, duration = build_seedance_prompt(target_scene, storyboard_data)
+                prompt, image_urls, duration = build_seedance_prompt(target_scene, storyboard_data, storyboard_path)
                 aspect_ratio = storyboard_data.get("aspect_ratio", aspect_ratio)
 
                 logger.info(f"🎬 Seedance 自动组装: scene={scene_id}, duration={duration}s, images={len(image_urls)}")
