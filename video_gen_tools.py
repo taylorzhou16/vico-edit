@@ -3,6 +3,7 @@
 Vico Tools - 视频创作API命令行工具集
 
 用法：
+  python video_gen_tools.py setup                                          # 交互式配置 API provider
   python video_gen_tools.py video --image <path> --prompt <text> --duration <seconds>
   python video_gen_tools.py music --prompt <text> --style <style>
   python video_gen_tools.py tts --text <text> --voice <voice_type>
@@ -204,7 +205,9 @@ class Config:
     def COMPASS_API_KEY(self) -> str:
         return self.get("COMPASS_API_KEY", "")
 
-    COMPASS_IMAGE_URL: str = "https://compass.llm.shopee.io/compass-api/v1/publishers/google/models/gemini-3.1-flash-image-preview:generateContent"
+    COMPASS_BASE_URL: str = "http://inner-api.us.migoo.ai/inbeeai/compass-api/v1"
+    COMPASS_IMAGE_URL: str = f"{COMPASS_BASE_URL}/publishers/google/models/gemini-3.1-flash-image-preview:generateContent"
+    COMPASS_VIDEO_URL: str = f"{COMPASS_BASE_URL}/publishers/google/models/veo-3.1-generate-001"
 
     # Kling API
     @property
@@ -260,6 +263,284 @@ def get_music_config_from_creative(creative_path: str) -> Optional[Dict[str, Any
             }
     except Exception:
         return None
+
+
+def load_storyboard(storyboard_path: str) -> Optional[Dict[str, Any]]:
+    """加载 storyboard.json"""
+    try:
+        with open(storyboard_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"❌ 无法加载 storyboard: {e}")
+        return None
+
+
+# ============== Storyboard 校验 ==============
+
+VALID_ASPECT_RATIOS = ["16:9", "9:16", "4:3", "3:4", "1:1"]
+SEEDANCE_VALID_DURATIONS = [5, 10, 15]
+
+MODE_BACKEND_MAP = {
+    "seedance-video": "seedance",
+    "omni-video": "kling-omni",
+    "img2video": "kling",
+    "text2video": "kling",
+    "veo3-text2video": "veo3",
+    "veo3-img2video": "veo3",
+}
+
+BACKEND_PROVIDER_KEYS = {
+    "seedance": ["SEEDANCE_API_KEY"],
+    "kling": ["KLING_ACCESS_KEY", "YUNWU_API_KEY", "FAL_API_KEY"],
+    "kling-omni": ["KLING_ACCESS_KEY", "YUNWU_API_KEY", "FAL_API_KEY"],
+    "vidu": ["YUNWU_API_KEY"],
+    "veo3": ["COMPASS_API_KEY"],
+}
+
+
+def validate_storyboard(storyboard_path: str) -> Dict[str, Any]:
+    """��验 storyboard.json，返回 {valid, errors, warnings}"""
+    errors = []
+    warnings = []
+
+    data = load_storyboard(storyboard_path)
+    if data is None:
+        return {"valid": False, "errors": [f"无法加载文件: {storyboard_path}"], "warnings": []}
+
+    # --- Schema basics ---
+    if "scenes" not in data or not isinstance(data.get("scenes"), list):
+        errors.append("缺少 scenes 数组")
+    if "aspect_ratio" not in data:
+        errors.append("缺�� aspect_ratio 字段")
+    elif data["aspect_ratio"] not in VALID_ASPECT_RATIOS:
+        errors.append(f"aspect_ratio '{data['aspect_ratio']}' 无效，支持: {VALID_ASPECT_RATIOS}")
+
+    scenes = data.get("scenes", [])
+    if not scenes:
+        errors.append("scenes 数组为空")
+        return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
+
+    # --- 收集 element IDs ---
+    characters = data.get("elements", {}).get("characters", [])
+    known_element_ids = {c.get("element_id") for c in characters if c.get("element_id")}
+
+    # --- 逐 Scene 校验 ---
+    for scene in scenes:
+        scene_id = scene.get("scene_id", "unknown")
+        shots = scene.get("shots", [])
+        if not shots:
+            warnings.append(f"[{scene_id}] 没有 shots")
+            continue
+
+        # 收集每个 shot 的后端信息
+        seedance_shots = []
+        for shot in shots:
+            shot_id = shot.get("shot_id", "unknown")
+            duration = shot.get("duration")
+            backend = shot.get("generation_backend", "")
+            mode = shot.get("generation_mode", "")
+
+            # 时长检查
+            if duration is None:
+                errors.append(f"[{shot_id}] 缺��� duration")
+                continue
+
+            # Backend-mode 一致性
+            expected_backend = MODE_BACKEND_MAP.get(mode)
+            if expected_backend and expected_backend != backend:
+                errors.append(
+                    f"[{shot_id}] generation_mode '{mode}' 应使用 backend '{expected_backend}'，"
+                    f"实际为 '{backend}'"
+                )
+
+            # 按后端类型校验时长
+            if backend == "vidu":
+                if duration < 5 or duration > 10:
+                    errors.append(f"[{shot_id}] Vidu 时长必须 5-10s，当前 {duration}s")
+            elif backend in ("kling", "kling-omni"):
+                if duration < 3 or duration > 15:
+                    errors.append(f"[{shot_id}] Kling 时长必须 3-15s，当前 {duration}s")
+            elif backend == "veo3":
+                if duration not in [4, 6, 8]:
+                    errors.append(f"[{shot_id}] Veo3 时长必须为 4/6/8s，当前 {duration}s")
+
+            # Seedance shots 收集（后续按 scene 汇总）
+            if backend == "seedance":
+                seedance_shots.append(shot)
+
+            # 参考图文件存在性
+            for ref in shot.get("reference_images", []):
+                if ref and not os.path.exists(ref):
+                    warnings.append(f"[{shot_id}] ��考图不存在: {ref}")
+
+            # video_prompt 必须存在
+            if not shot.get("video_prompt"):
+                warnings.append(f"[{shot_id}] 缺少 video_prompt")
+
+            # 角色引用检查
+            for char in shot.get("characters", []):
+                char_id = char if isinstance(char, str) else char.get("element_id", "")
+                if char_id and char_id not in known_element_ids:
+                    warnings.append(f"[{shot_id}] 引用了未注册角色: {char_id}")
+
+        # Seedance scene 总时长校验
+        if seedance_shots:
+            total = sum(s.get("duration", 0) for s in seedance_shots)
+            if total not in SEEDANCE_VALID_DURATIONS:
+                closest = min(SEEDANCE_VALID_DURATIONS, key=lambda x: abs(x - total))
+                errors.append(
+                    f"[{scene_id}] Seedance scene 总时长 {total}s 无效，"
+                    f"必须为 {SEEDANCE_VALID_DURATIONS}（最接近: {closest}s）"
+                )
+
+    # --- Provider 可用性 ---
+    used_backends = set()
+    for scene in scenes:
+        for shot in scene.get("shots", []):
+            b = shot.get("generation_backend")
+            if b:
+                used_backends.add(b)
+
+    for backend in used_backends:
+        required_keys = BACKEND_PROVIDER_KEYS.get(backend, [])
+        if required_keys and not any(getattr(Config, k, "") for k in required_keys):
+            warnings.append(f"后端 '{backend}' 无可用 API key（需要: {' 或 '.join(required_keys)}）")
+
+    return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
+
+
+# ============== Seedance Prompt 自动组装 ==============
+
+def build_seedance_prompt(scene: Dict[str, Any], storyboard: Dict[str, Any]) -> tuple:
+    """
+    根据 storyboard 的 scene 自动组装 Seedance 时间分段 prompt。
+
+    Returns:
+        (prompt: str, image_urls: list[str], duration: int)
+    """
+    scene_id = scene.get("scene_id", "scene_1")
+    shots = scene.get("shots", [])
+    aspect_ratio = storyboard.get("aspect_ratio", "16:9")
+
+    # --- 计算总时长 ---
+    total_duration = sum(s.get("duration", 0) for s in shots)
+    # 对齐到最接近的 5/10/15
+    valid_duration = min(SEEDANCE_VALID_DURATIONS, key=lambda x: abs(x - total_duration))
+    if valid_duration != total_duration:
+        logger.warning(f"⚠️ Scene {scene_id} 总时长 {total_duration}s → 调整为 {valid_duration}s")
+        # 按比例调整各 shot 时长
+        if total_duration > 0:
+            ratio = valid_duration / total_duration
+            adjusted = []
+            remaining = valid_duration
+            for i, shot in enumerate(shots):
+                if i == len(shots) - 1:
+                    adjusted.append(max(1, remaining))
+                else:
+                    d = max(1, round(shot.get("duration", 0) * ratio))
+                    adjusted.append(d)
+                    remaining -= d
+            # 存入局部映射，避免污染原始 scene dict
+            duration_map = {i: adj for i, adj in enumerate(adjusted)}
+    else:
+        duration_map = None
+
+    # --- 收集角色参考图 ---
+    char_mapping = storyboard.get("character_image_mapping", {})
+    characters = storyboard.get("elements", {}).get("characters", [])
+
+    if not char_mapping and characters:
+        logger.warning("⚠️ character_image_mapping 为空，角色参考图将不会包含在 prompt 中")
+
+    # 找出此 scene 涉及的角色参考图（保持 image_N 顺序）
+    scene_char_refs = []
+    scene_char_tags = []
+    for char in characters:
+        eid = char.get("element_id", "")
+        tag = char_mapping.get(eid)
+        refs = char.get("reference_images", [])
+        if tag and refs:
+            scene_char_refs.append(refs[0])
+            scene_char_tags.append((tag, char.get("name", ""), eid))
+
+    # --- 查找分镜图 ---
+    frame_image = None
+    # 优先从第一个 shot 的 reference_images 中查找分镜图
+    if shots and shots[0].get("reference_images"):
+        first_refs = shots[0]["reference_images"]
+        for ref in first_refs:
+            if "frame" in ref.lower() or "frames" in ref.lower():
+                frame_image = ref
+                break
+        if not frame_image:
+            # 第一张如果不是角色参考图，当作分镜图
+            if first_refs[0] not in scene_char_refs:
+                frame_image = first_refs[0]
+
+    # --- 组装 image_urls ---
+    image_urls = []
+    if frame_image:
+        image_urls.append(frame_image)
+    image_urls.extend(scene_char_refs)
+
+    # --- 组装角色描述行 ---
+    char_desc_parts = []
+    for tag, name, eid in scene_char_tags:
+        tag_str = f"@image{tag.replace('image_', '')}" if tag.startswith("image_") else f"@{tag}"
+        char_desc_parts.append(f"{tag_str}（{name}）")
+    char_line = "，".join(char_desc_parts) if char_desc_parts else ""
+
+    # --- 组装视角/风格行（从 scene 或首个 shot 提取）---
+    visual_style = scene.get("visual_style", "")
+    narrative_goal = scene.get("narrative_goal", "")
+    style_desc = visual_style or narrative_goal or ""
+
+    # --- 组装时间分段 ---
+    time_offset = 0
+    segments = []
+    for idx, shot in enumerate(shots):
+        d = duration_map[idx] if duration_map else shot.get("duration", 0)
+        start = time_offset
+        end = time_offset + d
+        prompt_text = shot.get("video_prompt", shot.get("description", ""))
+        segments.append(f"{start}-{end}s：{prompt_text}；")
+        time_offset = end
+
+    # --- 组装完整 prompt ---
+    lines = []
+
+    # Referencing line
+    if frame_image:
+        lines.append(f"Referencing the {scene_id}_frame composition for scene layout and character positioning.")
+        lines.append("")
+
+    # 角色参考行
+    if char_line:
+        lines.append(f"{char_line}，{style_desc}；" if style_desc else f"{char_line}；")
+        lines.append("")
+
+    # 整体概述
+    scene_desc = scene.get("scene_name", "") or scene.get("narrative_goal", "")
+    if scene_desc:
+        lines.append(f"整体：{scene_desc}")
+        lines.append("")
+
+    # 分段动作
+    lines.append(f"分段动作（{valid_duration}s）：")
+    lines.extend(segments)
+    lines.append("")
+
+    # 比例约束
+    ratio_name = "横屏" if aspect_ratio == "16:9" else "竖屏" if aspect_ratio == "9:16" else ""
+    lines.append(f"保持{ratio_name}{aspect_ratio}构图，不破坏画面比例")
+    lines.append("No background music.")
+
+    prompt = "\n".join(lines)
+
+    logger.info(f"📝 Seedance prompt 自动组装完成 ({scene_id}, {valid_duration}s, {len(image_urls)} images)")
+    logger.debug(f"Prompt:\n{prompt}")
+
+    return prompt, image_urls, valid_duration
 
 
 # ============== Vidu 视频生成 ==============
@@ -1956,6 +2237,196 @@ class SeedanceClient:
         await self.client.aclose()
 
 
+class Veo3Client:
+    """Google Veo3 视频生成客户端（通过 Compass 代理）"""
+
+    def __init__(self):
+        import httpx
+        self.client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0))
+        self.api_key = Config.COMPASS_API_KEY
+        self.base_url = Config.COMPASS_VIDEO_URL
+
+    async def close(self):
+        await self.client.aclose()
+
+    async def create_text2video(
+        self,
+        prompt: str,
+        duration: int = 8,
+        aspect_ratio: str = "16:9",
+        output: str = "output.mp4"
+    ) -> Dict[str, Any]:
+        """文生视频"""
+        return await self._generate(
+            prompt=prompt,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            output=output
+        )
+
+    async def create_image2video(
+        self,
+        image_path: str,
+        prompt: str,
+        duration: int = 8,
+        aspect_ratio: str = "16:9",
+        output: str = "output.mp4"
+    ) -> Dict[str, Any]:
+        """图生视频（首帧图）"""
+        image_data = self._encode_image(image_path)
+        instance = {
+            "prompt": prompt,
+            "image": {
+                "inlineData": {
+                    "mimeType": self._get_mime_type(image_path),
+                    "data": image_data
+                }
+            }
+        }
+        return await self._generate(
+            prompt=prompt,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            output=output,
+            instance_override=instance
+        )
+
+    async def _generate(
+        self,
+        prompt: str,
+        duration: int = 8,
+        aspect_ratio: str = "16:9",
+        output: str = "output.mp4",
+        instance_override: Dict = None
+    ) -> Dict[str, Any]:
+        """核心生成流程：提交 → 轮询 → 下载"""
+        # 校验时长
+        valid_durations = [4, 6, 8]
+        if duration not in valid_durations:
+            closest = min(valid_durations, key=lambda x: abs(x - duration))
+            logger.warning(f"⚠️ Veo3 duration {duration}s 不支持，调整为 {closest}s")
+            duration = closest
+
+        instance = instance_override or {"prompt": prompt}
+        if "prompt" not in instance:
+            instance["prompt"] = prompt
+
+        payload = {
+            "instances": [instance],
+            "parameters": {
+                "aspectRatio": aspect_ratio,
+                "durationSeconds": duration,
+                "personGeneration": "allow_all"
+            }
+        }
+
+        logger.info(f"📤 Veo3 视频生成: {prompt[:50]}... ({duration}s, {aspect_ratio})")
+
+        try:
+            response = await self.client.post(
+                f"{self.base_url}:predictLongRunning",
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}"
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+        except Exception as e:
+            return {"success": False, "error": f"Veo3 提交失败: {e}"}
+
+        operation_name = result.get("name")
+        if not operation_name:
+            return {"success": False, "error": f"无 operation name: {result}"}
+
+        logger.info(f"⏳ 任务已提交，等待生成...")
+
+        # 轮询
+        video_url = await self._wait_for_completion(operation_name)
+        if not video_url:
+            return {"success": False, "error": "Veo3 生成失败或超时"}
+
+        # 下载
+        await self._download_file(video_url, output)
+        return {
+            "success": True,
+            "output": output,
+            "video_url": video_url,
+            "duration": duration
+        }
+
+    async def _wait_for_completion(self, operation_name: str, max_wait: int = 600) -> Optional[str]:
+        """轮询任务状态"""
+        import time
+        start_time = time.monotonic()
+
+        while True:
+            elapsed = time.monotonic() - start_time
+            if elapsed > max_wait:
+                logger.error(f"❌ Veo3 任务超时 ({max_wait}秒)")
+                return None
+
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}:fetchPredictOperation",
+                    json={"operationName": operation_name},
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.api_key}"
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+
+                if result.get("done"):
+                    # 检查是否有错误
+                    if "error" in result:
+                        error_msg = result["error"].get("message", "Unknown error")
+                        logger.error(f"❌ Veo3 任务失败: {error_msg}")
+                        return None
+
+                    # 提取视频 URL
+                    videos = result.get("response", {}).get("videos", [])
+                    if videos:
+                        video_url = videos[0].get("uri") or videos[0].get("gcsUri")
+                        cost = result.get("priceCostUsd", 0)
+                        logger.info(f"✅ Veo3 生成完成 (耗时: {int(elapsed)}秒, 费用: ${cost})")
+                        return video_url
+                    else:
+                        logger.error(f"❌ 响应中无视频: {result}")
+                        return None
+
+                logger.info(f"   [{int(elapsed)}s] 生成中...")
+                await asyncio.sleep(10)
+
+            except Exception as e:
+                logger.warning(f"⚠️ 轮询异常: {e}")
+                await asyncio.sleep(10)
+
+    async def _download_file(self, url: str, output_path: str):
+        """下载视频文件"""
+        import httpx
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        async with httpx.AsyncClient(timeout=300.0) as dl_client:
+            response = await dl_client.get(url)
+            response.raise_for_status()
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+        logger.info(f"✅ 已保存到: {output_path}")
+
+    def _encode_image(self, image_path: str) -> str:
+        """将图片编码为 base64"""
+        with open(image_path, 'rb') as f:
+            return base64.b64encode(f.read()).decode('utf-8')
+
+    def _get_mime_type(self, image_path: str) -> str:
+        """获取图片 MIME 类型"""
+        ext = os.path.splitext(image_path)[1].lower()
+        mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp'}
+        return mime_map.get(ext, 'image/png')
+
+
 class SunoClient:
     """Suno 音乐生成客户端"""
 
@@ -2232,7 +2703,7 @@ class GeminiTTSClient:
             # 创建客户端
             client = texttospeech.TextToSpeechClient(
                 client_options=client_options.ClientOptions(
-                    api_endpoint=Config.COMPASS_IMAGE_URL.rsplit('/compass-api', 1)[0] + '/compass-api/v1',
+                    api_endpoint=Config.COMPASS_BASE_URL,
                     api_key=Config.COMPASS_API_KEY,
                 ),
                 transport="rest",
@@ -3042,6 +3513,16 @@ async def cmd_vision(args):
 
 async def cmd_video(args):
     """视频生成命令"""
+    # 参数互斥校验：必须指定 --prompt 或 (--storyboard + --scene)
+    has_prompt = bool(args.prompt)
+    has_scene = bool(getattr(args, 'scene', None) and getattr(args, 'storyboard', None))
+    if not has_prompt and not has_scene:
+        print(json.dumps({
+            "success": False,
+            "error": "必须指定 --prompt 或 --storyboard + --scene"
+        }, indent=2, ensure_ascii=False))
+        return 1
+
     provider = getattr(args, 'provider', None)
     backend = getattr(args, 'backend', 'kling')
 
@@ -3051,6 +3532,8 @@ async def cmd_video(args):
             provider = 'yunwu'  # vidu 只有 yunwu provider
         elif backend == 'seedance':
             provider = 'piapi'  # seedance 只有 piapi provider
+        elif backend == 'veo3':
+            provider = 'compass'  # veo3 只有 compass provider
         elif Config.KLING_ACCESS_KEY and Config.KLING_SECRET_KEY:
             provider = 'official'  # 优先使用官方 API
         elif Config.FAL_API_KEY:
@@ -3333,25 +3816,102 @@ async def cmd_video(args):
 
         client = SeedanceClient()
         try:
-            # Seedance 时长必须是 5/10/15 之一
-            valid_durations = [5, 10, 15]
-            if args.duration not in valid_durations:
-                closest = min(valid_durations, key=lambda x: abs(x - args.duration))
-                logger.warning(f"⚠️ Seedance duration {args.duration}s 不支持，调整为 {closest}s")
-                duration = closest
+            scene_id = getattr(args, 'scene', None)
+            storyboard_path = getattr(args, 'storyboard', None)
+
+            # --- 自动组装模式：--storyboard + --scene ---
+            if storyboard_path and scene_id:
+                storyboard_data = load_storyboard(storyboard_path)
+                if not storyboard_data:
+                    print(json.dumps({
+                        "success": False,
+                        "error": f"无法加载 storyboard: {storyboard_path}"
+                    }, indent=2, ensure_ascii=False))
+                    return 1
+
+                # 查找指定 scene
+                target_scene = None
+                for sc in storyboard_data.get("scenes", []):
+                    if sc.get("scene_id") == scene_id:
+                        target_scene = sc
+                        break
+                if not target_scene:
+                    print(json.dumps({
+                        "success": False,
+                        "error": f"未找到 scene: {scene_id}",
+                        "available": [s.get("scene_id") for s in storyboard_data.get("scenes", [])]
+                    }, indent=2, ensure_ascii=False))
+                    return 1
+
+                # 自动组装 prompt、image_urls、duration
+                prompt, image_urls, duration = build_seedance_prompt(target_scene, storyboard_data)
+                aspect_ratio = storyboard_data.get("aspect_ratio", aspect_ratio)
+
+                logger.info(f"🎬 Seedance 自动组装: scene={scene_id}, duration={duration}s, images={len(image_urls)}")
+
+                result = await client.submit_task(
+                    prompt=prompt,
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
+                    image_urls=image_urls if image_urls else None,
+                    output=args.output
+                )
             else:
-                duration = args.duration
+                # --- 手动模式（向后兼容）---
+                valid_durations = [5, 10, 15]
+                if args.duration not in valid_durations:
+                    closest = min(valid_durations, key=lambda x: abs(x - args.duration))
+                    logger.warning(f"⚠️ Seedance duration {args.duration}s 不支持，调整为 {closest}s")
+                    duration = closest
+                else:
+                    duration = args.duration
 
-            # 获取 image_list 参数（用于 I2V）
-            image_list = getattr(args, 'image_list', None)
+                image_list = getattr(args, 'image_list', None)
 
-            result = await client.submit_task(
-                prompt=args.prompt,
-                duration=duration,
-                aspect_ratio=aspect_ratio,
-                image_urls=image_list,
-                output=args.output
-            )
+                result = await client.submit_task(
+                    prompt=args.prompt,
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
+                    image_urls=image_list,
+                    output=args.output
+                )
+
+            if result.get("success"):
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+                return 0
+            else:
+                print(f"错误: {result.get('error')}")
+                return 1
+        finally:
+            await client.close()
+
+    elif backend == 'veo3':
+        if not Config.COMPASS_API_KEY:
+            print(json.dumps({
+                "success": False,
+                "error": "COMPASS_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 COMPASS_API_KEY",
+                "get_key": "Compass API key 用于访问 Veo3 视频生成"
+            }, indent=2, ensure_ascii=False))
+            return 1
+
+        client = Veo3Client()
+        try:
+            if args.image:
+                result = await client.create_image2video(
+                    image_path=args.image,
+                    prompt=args.prompt,
+                    duration=args.duration,
+                    aspect_ratio=aspect_ratio,
+                    output=args.output
+                )
+            else:
+                result = await client.create_text2video(
+                    prompt=args.prompt,
+                    duration=args.duration,
+                    aspect_ratio=aspect_ratio,
+                    output=args.output
+                )
 
             if result.get("success"):
                 print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -3620,6 +4180,138 @@ async def cmd_image(args):
         return 1
 
 
+async def cmd_setup(args):
+    """交互式配置 API provider 和密钥"""
+
+    # 定义所有可用的视频生成 provider 及其所需的 key
+    VIDEO_PROVIDERS = {
+        "1": {
+            "name": "Seedance（字节跳动，推荐虚构片/短剧/MV）",
+            "backend": "seedance",
+            "provider": "piapi",
+            "keys": [
+                {"key": "SEEDANCE_API_KEY", "label": "Seedance API Key (piapi)", "url": "https://piapi.ai"}
+            ]
+        },
+        "2": {
+            "name": "Kling 官方 API（快手，推荐写实/广告片）",
+            "backend": "kling",
+            "provider": "official",
+            "keys": [
+                {"key": "KLING_ACCESS_KEY", "label": "Kling Access Key", "url": "https://klingai.kuaishou.com"},
+                {"key": "KLING_SECRET_KEY", "label": "Kling Secret Key", "url": "https://klingai.kuaishou.com"}
+            ]
+        },
+        "3": {
+            "name": "Kling via fal.ai（绕过官方并发限制）",
+            "backend": "kling-omni",
+            "provider": "fal",
+            "keys": [
+                {"key": "FAL_API_KEY", "label": "fal.ai API Key", "url": "https://fal.ai"}
+            ]
+        },
+        "4": {
+            "name": "Vidu via Yunwu（兜底方案）",
+            "backend": "vidu",
+            "provider": "yunwu",
+            "keys": [
+                {"key": "YUNWU_API_KEY", "label": "Yunwu API Key", "url": "https://yunwu.ai"}
+            ]
+        },
+        "5": {
+            "name": "Veo3 via Compass（Google Veo3，高质量写实短片）",
+            "backend": "veo3",
+            "provider": "compass",
+            "keys": [
+                {"key": "COMPASS_API_KEY", "label": "Compass API Key", "url": "https://compass.llm.shopee.io"}
+            ]
+        },
+    }
+
+    OPTIONAL_SERVICES = {
+        "music": {
+            "name": "Suno 音乐生成",
+            "keys": [
+                {"key": "SUNO_API_KEY", "label": "Suno API Key", "url": "https://sunoapi.org"}
+            ]
+        },
+        "tts": {
+            "name": "火山引擎 TTS 语音合成",
+            "keys": [
+                {"key": "VOLCENGINE_TTS_APP_ID", "label": "火山引擎 App ID", "url": "https://www.volcengine.com/docs/656/79823"},
+                {"key": "VOLCENGINE_TTS_ACCESS_TOKEN", "label": "火山引擎 Access Token", "url": "https://www.volcengine.com/docs/656/79823"}
+            ]
+        },
+        "image": {
+            "name": "fal.ai 图片生成",
+            "keys": [
+                {"key": "FAL_API_KEY", "label": "fal.ai API Key", "url": "https://fal.ai"}
+            ]
+        },
+    }
+
+    config = load_config()
+
+    # 输出为 JSON，便于 Claude 解析
+    setup_info = {
+        "action": "setup",
+        "video_providers": {},
+        "optional_services": {},
+        "current_config": {}
+    }
+
+    for num, p in VIDEO_PROVIDERS.items():
+        setup_info["video_providers"][num] = {
+            "name": p["name"],
+            "backend": p["backend"],
+            "provider": p["provider"],
+            "required_keys": [{"key": k["key"], "label": k["label"], "url": k["url"],
+                               "configured": bool(config.get(k["key"]) or os.getenv(k["key"]))}
+                              for k in p["keys"]]
+        }
+
+    for svc_id, svc in OPTIONAL_SERVICES.items():
+        setup_info["optional_services"][svc_id] = {
+            "name": svc["name"],
+            "required_keys": [{"key": k["key"], "label": k["label"], "url": k["url"],
+                               "configured": bool(config.get(k["key"]) or os.getenv(k["key"]))}
+                              for k in svc["keys"]]
+        }
+
+    # 显示当前已配置的 keys
+    for key in ["SEEDANCE_API_KEY", "KLING_ACCESS_KEY", "KLING_SECRET_KEY", "FAL_API_KEY",
+                "YUNWU_API_KEY", "SUNO_API_KEY", "VOLCENGINE_TTS_APP_ID",
+                "VOLCENGINE_TTS_ACCESS_TOKEN", "COMPASS_API_KEY"]:
+        val = config.get(key) or os.getenv(key, "")
+        setup_info["current_config"][key] = f"{val[:4]}***" if val else "未设置"
+
+    # 非交互模式：带 --provider 参数时直接配置
+    provider_choice = getattr(args, 'provider_choice', None)
+    set_keys = getattr(args, 'set_key', None) or []
+
+    if set_keys:
+        for kv in set_keys:
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                config[k] = v
+                setup_info["saved"] = setup_info.get("saved", [])
+                setup_info["saved"].append(k)
+        save_config(config)
+        Config._cached_config = None  # 清除缓存
+        setup_info["status"] = "keys_saved"
+    elif provider_choice and provider_choice in VIDEO_PROVIDERS:
+        p = VIDEO_PROVIDERS[provider_choice]
+        setup_info["selected_provider"] = p["name"]
+        setup_info["need_keys"] = [k for k in p["keys"]
+                                   if not (config.get(k["key"]) or os.getenv(k["key"]))]
+        setup_info["status"] = "provider_selected"
+    else:
+        setup_info["status"] = "awaiting_selection"
+
+    print(json.dumps(setup_info, indent=2, ensure_ascii=False))
+    return 0
+
+
 async def cmd_check(args):
     """环境检查命令"""
     import shutil
@@ -3666,6 +4358,16 @@ async def cmd_check(args):
 
     # Environment variables (informational only)
     env_vars = {
+        "SEEDANCE_API_KEY": {
+            "value": Config.SEEDANCE_API_KEY,
+            "purpose": "Seedance 视频生成（piapi.ai 代理）",
+            "get_key": "https://piapi.ai"
+        },
+        "COMPASS_API_KEY": {
+            "value": Config.COMPASS_API_KEY,
+            "purpose": "Veo3 视频 + Gemini 图片 + Gemini TTS（Compass 代理）",
+            "get_key": "https://compass.llm.shopee.io"
+        },
         "YUNWU_API_KEY": {
             "value": Config.YUNWU_API_KEY,
             "purpose": "Vidu 视频生成 + Gemini 图片生成",
@@ -3713,8 +4415,39 @@ async def cmd_check(args):
             "get_key_url": info["get_key"]
         }
 
+    # 检查是否至少有一个视频 provider 可用
+    has_video_provider = any([
+        Config.SEEDANCE_API_KEY,
+        Config.COMPASS_API_KEY,
+        Config.KLING_ACCESS_KEY and Config.KLING_SECRET_KEY,
+        Config.FAL_API_KEY,
+        Config.YUNWU_API_KEY,
+    ])
+    results["has_video_provider"] = has_video_provider
+    if not has_video_provider:
+        results["ready"] = False
+        results["missing"].append("没有配置任何视频生成 API key")
+        results["hints"].append("请先运行 setup 命令配置 API: python video_gen_tools.py setup")
+
     print(json.dumps(results, indent=2, ensure_ascii=False))
     return 0 if results["ready"] else 1
+
+
+async def cmd_validate(args):
+    """校验 storyboard.json"""
+    result = validate_storyboard(args.storyboard)
+
+    # 输出结果
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    if result["errors"]:
+        logger.error(f"❌ 校验失败: {len(result['errors'])} 个错误")
+    if result["warnings"]:
+        logger.warning(f"⚠️ {len(result['warnings'])} 个警告")
+    if result["valid"]:
+        logger.info("✅ 校验通过")
+
+    return 0 if result["valid"] else 1
 
 
 def main():
@@ -3724,23 +4457,30 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
 
+    # setup 子命令（交互式配置 provider + API key）
+    setup_parser = subparsers.add_parser("setup", help="交互式配置 API provider 和密钥")
+    setup_parser.add_argument("--provider", dest="provider_choice", choices=["1", "2", "3", "4", "5"],
+                              help="选择视频 provider: 1=Seedance, 2=Kling官方, 3=Kling(fal), 4=Vidu(yunwu), 5=Veo3(compass)")
+    setup_parser.add_argument("--set-key", nargs="+", metavar="KEY=VALUE",
+                              help="设置 API key，格式: KEY=VALUE（可多个）")
+
     # check 子命令
     subparsers.add_parser("check", help="检查环境依赖和配置")
 
     # video 子命令
     video_parser = subparsers.add_parser("video", help="生成视频")
     video_parser.add_argument("--image", "-i", help="输入图片路径或URL（图生视频）")
-    video_parser.add_argument("--prompt", "-p", required=True, help="视频描述")
+    video_parser.add_argument("--prompt", "-p", default=None, help="视频描述（Seedance --scene 模式下可省略）")
     video_parser.add_argument("--duration", "-d", type=int, default=5, help="时长(秒)")
     video_parser.add_argument("--resolution", "-r", default="720p", help="分辨率")
     video_parser.add_argument("--aspect-ratio", "-a", default=None, help="宽高比（如 16:9, 9:16）")
     video_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径，自动读取 aspect_ratio")
     video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
-    video_parser.add_argument("--provider", choices=["official", "yunwu", "fal"], default=None,
-                              help="API provider (默认自动选择; vidu 仅支持 yunwu)")
-    video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni", "seedance"], default="kling",
-                              help="视频生成后端 (默认 kling; vidu 为兜底; kling-omni 用于参考图; seedance 用于智能切镜)")
+    video_parser.add_argument("--provider", choices=["official", "yunwu", "fal", "compass"], default=None,
+                              help="API provider (默认自动选择; vidu 仅支持 yunwu; veo3 仅支持 compass)")
+    video_parser.add_argument("--backend", "-b", choices=["vidu", "kling", "kling-omni", "seedance", "veo3"], default="kling",
+                              help="视频生成后端 (默认 kling; vidu 为兜底; kling-omni 用于参考图; seedance 用于智能切镜; veo3 用于 Compass Veo3)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro"], default="std",
                               help="生成模式 (Kling 专用: std 或 pro)")
     video_parser.add_argument("--multi-shot", action="store_true",
@@ -3753,6 +4493,7 @@ def main():
                               help="尾帧图片路径（用于首尾帧控制）")
     video_parser.add_argument("--image-list", nargs="+",
                               help="Omni-Video 多参考图路径列表（kling-omni 专用）")
+    video_parser.add_argument("--scene", help="Scene ID（Seedance 专用：配合 --storyboard 自动组装时间分段 prompt）")
 
     # music 子命令
     music_parser = subparsers.add_parser("music", help="生成音乐")
@@ -3792,6 +4533,10 @@ def main():
     vision_parser.add_argument("--batch", "-b", action="store_true", help="批量分析目录中的图片")
     vision_parser.add_argument("--prompt", "-p", default="请详细描述这张图片的内容，包括场景、主体、颜色、氛围等。", help="分析提示词")
 
+    # validate 子命令
+    validate_parser = subparsers.add_parser("validate", help="校验 storyboard.json")
+    validate_parser.add_argument("--storyboard", "-s", required=True, help="storyboard.json 路径")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -3800,12 +4545,14 @@ def main():
 
     # 运行对应命令
     commands = {
+        "setup": cmd_setup,
         "check": cmd_check,
         "video": cmd_video,
         "music": cmd_music,
         "tts": cmd_tts,
         "image": cmd_image,
         "vision": cmd_vision,
+        "validate": cmd_validate,
     }
 
     return asyncio.run(commands[args.command](args))
