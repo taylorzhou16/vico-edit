@@ -180,7 +180,7 @@ class Config:
         return self.get("SUNO_API_KEY", "")
 
     SUNO_API_URL: str = os.getenv("SUNO_API_URL", "https://api.sunoapi.org/api/v1")
-    SUNO_MODEL: str = os.getenv("SUNO_MODEL", "V3_5")
+    SUNO_MODEL: str = os.getenv("SUNO_MODEL", "V4_5")
 
     # Volcengine TTS
     @property
