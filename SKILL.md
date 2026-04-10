@@ -120,7 +120,7 @@ Task Progress:
 首先运行 setup 查看当前配置状态：
 
 ```bash
-python ~/.claude/skills/video-gen/video_gen_tools.py setup
+python video_gen_tools.py setup
 ```
 
 输出包含所有可选 provider 及其 key 配置状态。**如果没有任何视频 provider 的 key 已配置**，必须引导用户选择并配置：
@@ -145,16 +145,16 @@ python ~/.claude/skills/video-gen/video_gen_tools.py setup
 
 ```bash
 # 例：用户选择 Seedance
-python ~/.claude/skills/video-gen/video_gen_tools.py setup --set-key SEEDANCE_API_KEY=sk-xxx
+python video_gen_tools.py setup --set-key SEEDANCE_API_KEY=sk-xxx
 
 # 例：用户选择 Kling 官方
-python ~/.claude/skills/video-gen/video_gen_tools.py setup --set-key KLING_ACCESS_KEY=xxx KLING_SECRET_KEY=xxx
+python video_gen_tools.py setup --set-key KLING_ACCESS_KEY=xxx KLING_SECRET_KEY=xxx
 
 # 例：用户选择 fal
-python ~/.claude/skills/video-gen/video_gen_tools.py setup --set-key FAL_API_KEY=xxx
+python video_gen_tools.py setup --set-key FAL_API_KEY=xxx
 
 # 例：用户选择 Veo3
-python ~/.claude/skills/video-gen/video_gen_tools.py setup --set-key COMPASS_API_KEY=xxx
+python video_gen_tools.py setup --set-key COMPASS_API_KEY=xxx
 ```
 
 **可选服务**（保存 key 后继续询问）：
@@ -165,7 +165,7 @@ python ~/.claude/skills/video-gen/video_gen_tools.py setup --set-key COMPASS_API
 ### Step 2: 环境检查
 
 ```bash
-python ~/.claude/skills/video-gen/video_gen_tools.py check
+python video_gen_tools.py check
 ```
 
 - 基础依赖（FFmpeg/Python/httpx）不通过 → 停止并告知安装方法
@@ -609,7 +609,7 @@ storyboard["character_image_mapping"] = image_mapping
 **0. Storyboard 校验（必须通过）**
 
 ```bash
-python ~/.claude/skills/video-gen/video_gen_tools.py validate --storyboard storyboard/storyboard.json
+python video_gen_tools.py validate --storyboard storyboard/storyboard.json
 ```
 
 校验内容：Seedance 时长是否在 4-15s 范围、backend-mode 是否匹配、参考图是否存在、aspect_ratio 格式、API key 是否可用。
@@ -834,7 +834,7 @@ python video_gen_tools.py tts \
 拼接前自动检查分辨率/编码/帧率，不一致时自动归一化（1080x1920 / H.264 / 24fps）。
 
 ```bash
-python ~/.claude/skills/video-gen/video_gen_editor.py concat --inputs video1.mp4 video2.mp4 --output final.mp4
+python video_gen_editor.py concat --inputs video1.mp4 video2.mp4 --output final.mp4
 ```
 
 ### 合成流程
@@ -905,23 +905,23 @@ python video_gen_editor.py narration \
 
 ```bash
 # 环境检查
-python ~/.claude/skills/video-gen/video_gen_tools.py check
+python video_gen_tools.py check
 
 # Storyboard 校验（Phase 4 执行前必须通过）
-python ~/.claude/skills/video-gen/video_gen_tools.py validate --storyboard storyboard/storyboard.json
+python video_gen_tools.py validate --storyboard storyboard/storyboard.json
 
 # 视频生成（必须从 storyboard.json 读取 aspect_ratio）
-python ~/.claude/skills/video-gen/video_gen_tools.py video --prompt <描述> --aspect-ratio {aspect_ratio} --output <输出>
+python video_gen_tools.py video --prompt <描述> --aspect-ratio {aspect_ratio} --output <输出>
 
 # Seedance 自动组装模式（推荐：工具自动计算时间分段、拼装 prompt、排列 image_urls）
-python ~/.claude/skills/video-gen/video_gen_tools.py video \
+python video_gen_tools.py video \
   --backend seedance \
   --storyboard storyboard/storyboard.json \
   --scene scene_1 \
   --output generated/videos/scene_1.mp4
 
 # Seedance 手动模式（兜底）
-python ~/.claude/skills/video-gen/video_gen_tools.py video \
+python video_gen_tools.py video \
   --backend seedance \
   --prompt "手动编写的时间分段 prompt..." \
   --image-list frame.png ref.jpg \
@@ -929,14 +929,14 @@ python ~/.claude/skills/video-gen/video_gen_tools.py video \
   --output output.mp4
 
 # Veo3 文生视频（Google Veo3，4/6/8s 高质量短片）
-python ~/.claude/skills/video-gen/video_gen_tools.py video \
+python video_gen_tools.py video \
   --backend veo3 \
   --prompt <描述> \
   --duration 8 \
   --output generated/videos/shot.mp4
 
 # Veo3 图生视频（首帧控制）
-python ~/.claude/skills/video-gen/video_gen_tools.py video \
+python video_gen_tools.py video \
   --backend veo3 \
   --image <首帧图> \
   --prompt <描述> \
@@ -944,24 +944,24 @@ python ~/.claude/skills/video-gen/video_gen_tools.py video \
   --output generated/videos/shot.mp4
 
 # 音乐（必须传 --creative，从 creative.json 读取 prompt 和 style）
-python ~/.claude/skills/video-gen/video_gen_tools.py music --creative creative/creative.json --output <输出>
+python video_gen_tools.py music --creative creative/creative.json --output <输出>
 
 # 旁白（按 narration_segments 分段调用）
-python ~/.claude/skills/video-gen/video_gen_tools.py tts --text <分段文案> --voice female_narrator --emotion gentle --output generated/narration/narr_1.mp3
+python video_gen_tools.py tts --text <分段文案> --voice female_narrator --emotion gentle --output generated/narration/narr_1.mp3
 
 # 图片生成
-python ~/.claude/skills/video-gen/video_gen_tools.py image --prompt <描述> --aspect-ratio {aspect_ratio} --output <输出>
+python video_gen_tools.py image --prompt <描述> --aspect-ratio {aspect_ratio} --output <输出>
 
 # 剪辑（concat 必须传 --storyboard，从 storyboard.json 读取 aspect_ratio）
-python ~/.claude/skills/video-gen/video_gen_editor.py concat --inputs <视频列表> --output <输出> --storyboard storyboard/storyboard.json
+python video_gen_editor.py concat --inputs <视频列表> --output <输出> --storyboard storyboard/storyboard.json
 
 # 旁白插入（按 overall_time_range 插入）
-python ~/.claude/skills/video-gen/video_gen_editor.py narration --video <视频> --storyboard storyboard/storyboard.json --narration-dir generated/narration --output <输出>
+python video_gen_editor.py narration --video <视频> --storyboard storyboard/storyboard.json --narration-dir generated/narration --output <输出>
 
 # 其他剪辑命令
-python ~/.claude/skills/video-gen/video_gen_editor.py mix --video <视频> --bgm <音乐> --output <输出>
-python ~/.claude/skills/video-gen/video_gen_editor.py transition --inputs <v1> <v2> --type <类型> --output <输出>
-python ~/.claude/skills/video-gen/video_gen_editor.py color --video <视频> --preset <预设> --output <输出>
+python video_gen_editor.py mix --video <视频> --bgm <音乐> --output <输出>
+python video_gen_editor.py transition --inputs <v1> <v2> --type <类型> --output <输出>
+python video_gen_editor.py color --video <视频> --preset <预设> --output <输出>
 ```
 
 ---
