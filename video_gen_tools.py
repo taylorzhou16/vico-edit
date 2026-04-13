@@ -2462,11 +2462,21 @@ class FalSeedanceClient:
             if not request_id:
                 return {"success": False, "error": "No request_id returned"}
 
-            video_url = await self._wait_for_completion(request_id)
-            if video_url and output:
-                await self._download_file(video_url, output)
-                return {"success": True, "video_url": video_url, "output": output, "request_id": request_id}
-            return {"success": bool(video_url), "video_url": video_url, "request_id": request_id}
+            video_result = await self._wait_for_completion(request_id)
+            # 检查返回类型：str = 成功，dict = 错误
+            if isinstance(video_result, dict) and "error" in video_result:
+                # 返回完整错误信息
+                return {
+                    "success": False,
+                    "error": video_result.get("error"),
+                    "message": video_result.get("message"),
+                    "ctx": video_result.get("ctx"),
+                    "request_id": request_id
+                }
+            elif video_result and isinstance(video_result, str) and output:
+                await self._download_file(video_result, output)
+                return {"success": True, "video_url": video_result, "output": output, "request_id": request_id}
+            return {"success": bool(video_result), "video_url": video_result, "request_id": request_id}
         except Exception as e:
             logger.error(f"❌ FalSeedance 任务失败: {e}")
             return {"success": False, "error": str(e)}
@@ -2491,11 +2501,27 @@ class FalSeedanceClient:
                 if status == "COMPLETED":
                     resp = await self.client.get(result_url, headers={"Authorization": f"Key {Config.FAL_API_KEY}"})
                     result = resp.json()
+                    # 检查是否有 API 错误（如 content_policy_violation）
+                    if resp.status_code != 200 or "detail" in result:
+                        error_detail = result.get("detail", [])
+                        if error_detail and isinstance(error_detail, list):
+                            # 提取第一个错误的详细信息
+                            err = error_detail[0]
+                            error_type = err.get("type", "unknown")
+                            error_msg = err.get("msg", str(err))
+                            error_ctx = err.get("ctx", {})
+                            logger.error(f"❌ FalSeedance API 错误: [{error_type}] {error_msg}")
+                            if error_ctx:
+                                logger.error(f"   详情: {error_ctx}")
+                            # 返回包含错误信息的结构，让上层能处理
+                            return {"error": error_type, "message": error_msg, "ctx": error_ctx}
+                        logger.error(f"❌ FalSeedance API 错误: {result}")
+                        return {"error": "api_error", "message": str(result)}
                     url = result.get("video", {}).get("url")
                     if url:
                         logger.info(f"✅ FalSeedance 完成 (耗时: {int(elapsed)}秒)")
                         return url
-                    return None
+                    return {"error": "no_video_url", "message": "Result has no video URL"}
                 elif status == "FAILED":
                     logger.error(f"❌ FalSeedance 失败: {data}")
                     return None
@@ -4668,8 +4694,8 @@ def main():
     video_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径，自动读取 aspect_ratio")
     video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
-    video_parser.add_argument("--provider", choices=["official", "fal", "compass"], default=None,
-                              help="API provider (默认自动选择; veo3 仅支持 compass)")
+    video_parser.add_argument("--provider", choices=["official", "fal", "piapi", "compass"], default=None,
+                              help="API provider (默认自动选择; seedance: fal > piapi; veo3 仅支持 compass)")
     video_parser.add_argument("--backend", "-b", choices=["kling", "kling-omni", "seedance", "veo3"], default="kling",
                               help="视频生成后端 (默认 kling; kling-omni 用于参考图; seedance 用于智能切镜; veo3 用于全局兜底)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro", "text_to_video", "first_last_frames", "omni_reference"], default="std",
