@@ -3,6 +3,7 @@
 ## 目录
 
 - 四种后端能力对比
+- **真人素材检测（顶层过滤）**
 - 后端选择决策树
 - Seedance 智能切镜模式
 - 自动选择逻辑
@@ -42,17 +43,79 @@
 
 ---
 
+## 真人素材检测（顶层过滤）
+
+**重要限制**：Seedance（fal 和 piapi provider）无法处理含有真人图像的视频生成请求，会触发 `content_policy_violation` 错误。
+
+因此在后端选择之前，必须先检测是否涉及真人素材。
+
+### 检测条件
+
+在 **Phase 2 创意设计阶段** 检测以下条件：
+
+| 条件 | 检测方式 | 说明 |
+|------|---------|------|
+| `visual_style = realistic` | 读取 `creative.json` | 用户选择了真人写实风格 |
+| 有真人参考图 | 检查 `materials/personas/` 目录 | 用户上传的真人照片或 AI 生成的真人风格参考图 |
+| 视频需要人物出场 | 分镜设计中镜头包含角色 | 视频生成需要参考人物外貌 |
+
+**真人素材定义**：
+- 用户上传的真实人物照片（自拍、肖像照等）
+- AI 生成的真人风格参考图（`visual_style = realistic` 时生成）
+- **不包含**：动漫风格参考图、无人物的场景图
+
+### 禁用 Seedance 规则
+
+**当检测到真人素材时，禁止使用 Seedance 后端，强制降级到 Kling-Omni。**
+
+```
+检测流程（Phase 2）：
+读取 creative.json → visual_style = realistic?
+                ↓ 是
+检查 materials/personas/ → 是否有真人参考图?
+                ↓ 是
+禁用 Seedance → 强制使用 Kling-Omni
+```
+
+**原因**：
+- fal provider：触发 `content_policy_violation: likenesses of real people`
+- piapi provider：同样有真人肖像审核限制
+- Kling-Omni：无此限制，可正常处理真人参考图
+
+### 后端选择优先级调整
+
+| 真人素材检测结果 | 后端选择 |
+|-----------------|---------|
+| **有真人素材** | **Kling-Omni（强制）**，禁止 Seedance |
+| 无真人素材（动漫风格） | Seedance（优先）> Kling-Omni |
+| 无人物参考图 | Seedance（优先）> Kling-Omni |
+
+**落地到 storyboard.json**：
+
+```json
+{
+  "scene_id": "scene_1",
+  "generation_backend": "kling-omni",  // 有真人素材时强制
+  "backend_selection_reason": "真人参考图禁用 Seedance",
+  "shots": [...]
+}
+```
+
+---
+
 ## 后端选择决策树
 
-**场景驱动选择**：
+**场景驱动选择**（真人素材检测后）：
 
-| 场景 | 优先后端 | 兜底后端 | 原因 |
-|-----|---------|---------|------|
-| **虚构片/短剧** | **Seedance** | Kling-Omni | 智能切镜 + 多参考图，角色一致性 |
-| **广告片（无真实素材）** | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
-| **广告片（有真实素材）** | Kling-3.0 | — | 首帧精确控制，真实素材 |
-| **MV短片** | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
-| **Vlog/写实类** | Kling-3.0 | Veo3 | 首帧精确控制，不走 Seedance |
+| 场景 | 真人素材 | 优先后端 | 兜底后端 | 原因 |
+|-----|---------|---------|---------|------|
+| **虚构片/短剧** | 无（动漫） | **Seedance** | Kling-Omni | 智能切镜 + 多参考图 |
+| **虚构片/短剧** | **有真人** | **Kling-Omni** | — | 真人素材禁用 Seedance |
+| **广告片（无真实素材）** | 无 | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
+| **广告片（有真实素材）** | 有 | Kling-3.0 | — | 首帧精确控制，真实素材 |
+| **MV短片** | 无（动漫） | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
+| **MV短片** | **有真人** | **Kling-Omni** | — | 真人素材禁用 Seedance |
+| **Vlog/写实类** | 有 | Kling-3.0 | Veo3 | 首帧精确控制，不走 Seedance |
 
 **Veo3 作为全局最兜底的视频生成模型**：除非用户主动要求使用 Veo3，否则不主动调用 Veo3。Veo3 时长固定（4/6/8s）、分辨率最高 720p，仅在所有其他后端失败时作为最终备选。
 
@@ -65,22 +128,25 @@
 | **Seedance** | ❌ 参考图 | 分镜图是视觉风格参考，不是首帧 |
 | **Kling-Omni** | ❌ 参考图 | 只有 reference2video，无 img2video |
 
-**核心原则**：
-1. **需要智能切镜 → Seedance**（时间分段自动触发 multi-shot）
-2. **需要首帧控制 → Kling/Vidu**（只有这两个支持）
-3. **Seedance 失败 → 降级 Kling-Omni**（失去智能切镜，保留角色一致性）
+**核心原则**（优先级从高到低）：
+1. **真人素材检测 → 禁用 Seedance**（顶层过滤）
+2. **需要智能切镜 → Seedance**（时间分段自动触发 multi-shot）
+3. **需要首帧控制 → Kling/Vidu**（只有这两个支持）
+4. **Seedance 失败 → 降级 Kling-Omni**（失去智能切镜，保留角色一致性）
 
-### 场景速查
+### 场景速查（真人素材检测后）
 
-| 场景 | 后端 | 关键参数 |
-|------|------|---------|
-| **虚构片/短剧** | **Seedance** | `--backend seedance --image-list frame.png ref.jpg` |
-| **广告片（无真实素材）** | **Seedance** | 时间分段 prompt + 分镜图 |
-| **广告片（有真实素材）** | Kling-3.0 | `--image first_frame.png` |
-| **MV短片** | **Seedance** | 时间分段 prompt + 分镜图 |
-| **Vlog/写实类** | Kling-3.0 | `--image first_frame.png` |
-| 需要首尾帧动画 | Kling | `--image first.png --tail-image last.png` |
-| 简单无人场景 / 快速原型 | Kling（默认）或 vidu | 无需特殊参数 |
+| 场景 | 真人素材 | 后端 | 关键参数 |
+|------|---------|------|---------|
+| **虚构片/短剧** | 无 | **Seedance** | `--backend seedance --image-list frame.png ref.jpg` |
+| **虚构片/短剧** | **有** | **Kling-Omni** | `--backend kling-omni --image-list frame.png ref.jpg`（禁用 Seedance） |
+| **广告片（无真实素材）** | 无 | **Seedance** | 时间分段 prompt + 分镜图 |
+| **广告片（有真实素材）** | 有 | Kling-3.0 | `--image first_frame.png` |
+| **MV短片** | 无 | **Seedance** | 时间分段 prompt + 分镜图 |
+| **MV短片** | **有** | **Kling-Omni** | 禁用 Seedance |
+| **Vlog/写实类** | 有 | Kling-3.0 | `--image first_frame.png` |
+| 需要首尾帧动画 | — | Kling | `--image first.png --tail-image last.png` |
+| 简单无人场景 / 快速原型 | 无 | Kling（默认）或 vidu | 无需特殊参数 |
 
 ---
 

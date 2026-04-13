@@ -52,13 +52,15 @@ python video_gen_tools.py video --provider fal --backend kling-omni --image-list
 
 **场景驱动选择**：
 
-| 场景 | 优先后端 | 兜底后端 | 原因 |
-|-----|---------|---------|------|
-| **虚构片/短剧** | **Seedance** | Kling-Omni | 智能切镜 + 多参考图，角色一致性 |
-| **广告片（无真实素材）** | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
-| **广告片（有真实素材）** | Kling-3.0 | — | 首帧精确控制，真实素材 |
-| **MV短片** | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
-| **Vlog/写实类** | Kling-3.0 | Veo3 | 首帧精确控制，不走 Seedance |
+| 场景 | 真人素材 | 优先后端 | 兜底后端 | 原因 |
+|-----|---------|---------|---------|------|
+| **虚构片/短剧** | 无（动漫） | **Seedance** | Kling-Omni | 智能切镜 + 多参考图 |
+| **虚构片/短剧** | **有真人** | **Kling-Omni** | — | 真人素材禁用 Seedance |
+| **广告片（无真实素材）** | 无 | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
+| **广告片（有真实素材）** | 有 | Kling-3.0 | — | 首帧精确控制，真实素材 |
+| **MV短片** | 无（动漫） | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
+| **MV短片** | **有真人** | **Kling-Omni** | — | 真人素材禁用 Seedance |
+| **Vlog/写实类** | 有 | Kling-3.0 | Veo3 | 首帧精确控制，不走 Seedance |
 
 **Veo3 作为全局最兜底的视频生成模型**：除非用户主动要求使用 Veo3，否则不主动调用 Veo3。Veo3 时长固定（4/6/8s）、分辨率最高 720p，仅在所有其他后端失败时作为最终备选。
 
@@ -492,15 +494,38 @@ storyboard["character_image_mapping"] = image_mapping
 
 ### Step 2: 自动后端选择逻辑
 
-**场景驱动选择**：
+**顶层过滤：真人素材检测**
 
-| 场景 | 优先后端 | 兜底后端 | 原因 |
-|-----|---------|---------|------|
-| **虚构片/短剧** | **Seedance** | Kling-Omni | 智能切镜 + 多参考图，角色一致性 |
-| **广告片（无真实素材）** | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
-| **广告片（有真实素材）** | Kling-3.0 | — | 首帧精确控制，真实素材 |
-| **MV短片** | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
-| **Vlog/写实类** | Kling-3.0 | Veo3 | 首帧精确控制，不走 Seedance |
+Seedance（fal 和 piapi）无法处理含有真人图像的视频生成请求，会触发 `content_policy_violation`。
+
+**检测条件**：
+- `visual_style = realistic`（真人写实风格）
+- `materials/personas/` 目录有真人参考图（用户上传或 AI 生成的真人风格图）
+
+**禁用规则**：检测到真人素材 → 禁用 Seedance → 强制使用 Kling-Omni
+
+**检测流程**（在创意设计阶段执行）：
+```
+读取 creative.json → visual_style = realistic?
+                ↓ 是
+检查 materials/personas/ → 是否有真人参考图?
+                ↓ 是
+禁用 Seedance → 强制使用 Kling-Omni → 写入 storyboard.json
+```
+
+---
+
+**场景驱动选择**（真人素材检测后）：
+
+| 场景 | 真人素材 | 优先后端 | 兜底后端 | 原因 |
+|-----|---------|---------|---------|------|
+| **虚构片/短剧** | 无（动漫） | **Seedance** | Kling-Omni | 智能切镜 + 多参考图 |
+| **虚构片/短剧** | **有真人** | **Kling-Omni** | — | 真人素材禁用 Seedance |
+| **广告片（无真实素材）** | 无 | **Seedance** | Kling-Omni | 长镜头 + 智能切镜 |
+| **广告片（有真实素材）** | 有 | Kling-3.0 | — | 首帧精确控制，真实素材 |
+| **MV短片** | 无（动漫） | **Seedance** | Kling-Omni | 长镜头 + 音乐驱动 |
+| **MV短片** | **有真人** | **Kling-Omni** | — | 真人素材禁用 Seedance |
+| **Vlog/写实类** | 有 | Kling-3.0 | Veo3 | 首帧精确控制，不走 Seedance |
 
 **首帧控制能力对比**：
 
@@ -516,11 +541,12 @@ storyboard["character_image_mapping"] = image_mapping
 - `anime` → 用户照片可直接使用
 - 纯创意模式下 visual_style 只影响 AI 参考图风格
 
-**核心原则**：
-1. **同一项目使用同一模型**
-2. **虚构片不使用 text2video**
-3. **需要首帧控制时只能用 Kling 或 Vidu**
-4. **Seedance/Omni 分镜图是参考，不是首帧精确控制**
+**核心原则**（优先级从高到低）：
+1. **真人素材检测 → 禁用 Seedance**（顶层过滤）
+2. **同一项目使用同一模型**
+3. **虚构片不使用 text2video**
+4. **需要首帧控制时只能用 Kling 或 Vidu**
+5. **Seedance/Omni 分镜图是参考，不是首帧精确控制**
 
 ### Step 3: 生成分镜
 
