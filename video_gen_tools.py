@@ -3929,7 +3929,13 @@ async def cmd_video(args):
     # Provider 自动选择逻辑（如果用户未指定）
     if provider is None:
         if backend == 'seedance':
-            provider = 'piapi'  # seedance 只有 piapi provider
+            # seedance: fal > piapi（按 SKILL.md 定义）
+            if Config.FAL_API_KEY:
+                provider = 'fal'
+            elif Config.SEEDANCE_API_KEY:
+                provider = 'piapi'
+            else:
+                provider = 'fal'  # 默认，会报错提示配置
         elif backend == 'veo3':
             provider = 'compass'  # veo3 只有 compass provider
         elif Config.KLING_ACCESS_KEY and Config.KLING_SECRET_KEY:
@@ -3952,7 +3958,7 @@ async def cmd_video(args):
         logger.info(f"📐 使用默认宽高比: {aspect_ratio}")
 
     # ==================== fal.ai provider ====================
-    # fal 使用统一的 Kling 模型，参数和 prompt 写法与官方完全一致
+    # fal 支持 Kling 和 Seedance 两种后端，需根据 backend 参数区分
     if provider == 'fal':
         if not Config.FAL_API_KEY:
             print(json.dumps({
@@ -3963,6 +3969,69 @@ async def cmd_video(args):
             }, indent=2, ensure_ascii=False))
             return 1
 
+        # ===== Seedance backend (fal provider) =====
+        if backend == 'seedance':
+            client = FalSeedanceClient()
+            try:
+                duration = max(4, min(15, args.duration))
+                if duration != args.duration:
+                    logger.warning(f"⚠️ Seedance duration 调整为 {duration}s (范围 4-15s)")
+                image_list = getattr(args, 'image_list', None)
+                audio_urls = getattr(args, 'audio_urls', None)
+                video_urls = getattr(args, 'video_urls', None)
+                scene_id = getattr(args, 'scene', None)
+                storyboard_path = getattr(args, 'storyboard', None)
+
+                # 支持 --storyboard + --scene 自动组装
+                if storyboard_path and scene_id:
+                    storyboard_data = load_storyboard(storyboard_path)
+                    if not storyboard_data:
+                        print(json.dumps({"success": False, "error": f"无法加载 storyboard: {storyboard_path}"}, indent=2, ensure_ascii=False))
+                        return 1
+                    target_scene = None
+                    for sc in storyboard_data.get("scenes", []):
+                        if sc.get("scene_id") == scene_id:
+                            target_scene = sc
+                            break
+                    if not target_scene:
+                        print(json.dumps({"success": False, "error": f"未找到 scene: {scene_id}"}, indent=2, ensure_ascii=False))
+                        return 1
+                    prompt, image_urls, duration = build_seedance_prompt(target_scene, storyboard_data, storyboard_path)
+                    aspect_ratio = storyboard_data.get("aspect_ratio", aspect_ratio)
+                    logger.info(f"🎬 Seedance 自动组装: scene={scene_id}, duration={duration}s, images={len(image_urls)}")
+
+                    result = await client.submit_task(
+                        prompt=prompt, duration=duration, aspect_ratio=aspect_ratio,
+                        image_urls=image_urls if image_urls else None,
+                        resolution=getattr(args, 'resolution', '720p'),
+                        seed=getattr(args, 'seed', None),
+                        model=getattr(args, 'model', 'fast'),
+                        output=args.output
+                    )
+                else:
+                    result = await client.submit_task(
+                        prompt=args.prompt,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        image_urls=image_list,
+                        video_urls=video_urls,
+                        audio_urls=audio_urls,
+                        resolution=getattr(args, 'resolution', '720p'),
+                        seed=getattr(args, 'seed', None),
+                        model=getattr(args, 'model', 'fast'),
+                        output=args.output
+                    )
+
+                if result.get("success"):
+                    print(json.dumps(result, indent=2, ensure_ascii=False))
+                    return 0
+                else:
+                    print(json.dumps(result, indent=2, ensure_ascii=False))
+                    return 1
+            finally:
+                await client.close()
+
+        # ===== Kling / Kling-Omni backend (fal provider) =====
         client = FalKlingClient()
         try:
             generate_audio = args.audio if hasattr(args, 'audio') else False

@@ -569,12 +569,12 @@ async def add_transition(
 # ============== 调色 ==============
 
 COLOR_PRESETS = {
-    "warm": "colorbalance=rs=0.1:gs=0:bs=-0.1,eq=contrast=1.1:saturation=1.2",
-    "cool": "colorbalance=rs=-0.1:gs=0:bs=0.1,eq=contrast=1.05:saturation=1.1",
-    "vibrant": "eq=contrast=1.2:saturation=1.4",
-    "cinematic": "curves=preset=vintage,eq=contrast=1.2:saturation=0.9",
-    "desaturated": "eq=saturation=0.7",
-    "vintage": "curves=preset=vintage,eq=contrast=1.1:saturation=0.8",
+    "warm": "colorbalance=rs=0.03:gs=0:bs=-0.03,eq=contrast=1.03:saturation=1.05",
+    "cool": "colorbalance=rs=-0.03:gs=0:bs=0.03,eq=contrast=1.02:saturation=1.03",
+    "vibrant": "eq=contrast=1.05:saturation=1.08",
+    "cinematic": "curves=preset=vintage,eq=contrast=1.05:saturation=0.95",
+    "desaturated": "eq=saturation=0.92",
+    "vintage": "curves=preset=vintage,eq=contrast=1.03:saturation=0.95",
 }
 
 
@@ -845,11 +845,12 @@ async def add_narration(
         inputs.extend(["-i", audio_file])
         audio_counter += 1
 
-        # 获取时间范围
-        time_range = seg.get("overall_time_range", "0-5")
+        # 获取时间范围（支持 time_range 和 overall_time_range 两种字段名）
+        time_range = seg.get("time_range") or seg.get("overall_time_range", "0-5")
         if isinstance(time_range, str) and "-" in time_range:
-            start, end = time_range.split("-")
-            start = float(start)
+            # 处理 "0-3s" 格式，去掉末尾的 's'
+            parts = time_range.rstrip("s").split("-")
+            start = float(parts[0])
         else:
             start = 0
 

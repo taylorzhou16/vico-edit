@@ -997,7 +997,7 @@ python video_gen_editor.py concat --inputs video1.mp4 video2.mp4 --output final.
 ### 合成流程
 
 1. **拼接** → 按分镜顺序连接（自动归一化）
-2. **插入旁白** → 按 `narration_segments` 的 `overall_time_range` 将旁白音频配到正确位置（如有）
+2. **插入旁白** → 智能合成旁白音频（自动测量时长、计算不重叠时间点）
 3. **转场** → 添加镜头间转场效果
 4. **调色** → 应用整体调色风格
 5. **配乐** → 混合背景音乐
@@ -1036,11 +1036,11 @@ python video_gen_editor.py concat --inputs video1.mp4 video2.mp4 --output final.
 
 **触发条件**：读取 `storyboard.json` 的 `narration_segments`，若存在则触发。
 
-**插入方式**：使用 FFmpeg 在指定时间点插入旁白音频。
+**插入方式**：使用 FFmpeg 智能合成旁白音频，自动计算时间点避免重叠。
 
 ```bash
-# 按 overall_time_range 插入旁白
-python video_gen_editor.py narration \
+# 智能旁白合成（自动测量音频时长，避免重叠）
+python video_gen_editor.py smart-narration \
   --video concat_output.mp4 \
   --storyboard storyboard/storyboard.json \
   --narration-dir generated/narration \
@@ -1048,9 +1048,9 @@ python video_gen_editor.py narration \
 ```
 
 **时间点计算**：
-- `overall_time_range` 格式：`"0-3s"` 表示从 0 秒开始，持续到 3 秒
-- 旁白音频在 `overall_time_range` 的起始时间点插入
-- 多段旁白按时间顺序依次叠加
+- 使用 ffprobe 测量每段旁白音频的实际时长
+- 自动计算不重叠的时间点，预留间隔（默认 0.5 秒）
+- 若空间紧张会动态压缩间隔
 
 ### Phase 5 产出
 
@@ -1112,8 +1112,8 @@ python video_gen_tools.py image --prompt <描述> --aspect-ratio {aspect_ratio} 
 # 剪辑（concat 必须传 --storyboard，从 storyboard.json 读取 aspect_ratio）
 python video_gen_editor.py concat --inputs <视频列表> --output <输出> --storyboard storyboard/storyboard.json
 
-# 旁白插入（按 overall_time_range 插入）
-python video_gen_editor.py narration --video <视频> --storyboard storyboard/storyboard.json --narration-dir generated/narration --output <输出>
+# 智能旁白合成（自动测量音频时长，避免重叠）
+python video_gen_editor.py smart-narration --video <视频> --storyboard storyboard/storyboard.json --narration-dir generated/narration --output <输出>
 
 # 其他剪辑命令
 python video_gen_editor.py mix --video <视频> --bgm <音乐> --output <输出>
