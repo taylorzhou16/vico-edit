@@ -54,7 +54,7 @@
   - **Veo3**：4/6/8秒、全局兜底模型
 - ✅ **AI 音乐生成** - Suno V3.5 背景音乐
 - ✅ **TTS 语音合成** - Gemini TTS（多种音色、风格提示）
-- ✅ **AI 图片生成** - Gemini 3.1 Flash Image（compass/yunwu）
+- ✅ **AI 图片生成** - Gemini 3.1 Flash Image（migoo/yunwu）
 - ✅ **视频剪辑** - 转场、字幕、调色、变速、音频混合
 
 ## 💡 使用建议
@@ -198,19 +198,19 @@ export KLING_ACCESS_KEY="your-access-key"
 export KLING_SECRET_KEY="your-secret-key"
 
 # Veo3 API - Google Veo3 视频生成（全局兜底模型）
-export COMPASS_API_KEY="your-compass-api-key"
+export MIGOO_API_KEY="your-migoo-api-key"
 
 # Suno 音乐生成
 export SUNO_API_KEY="your-api-key"
 
-# Gemini 图片生成（compass 优先）
-export COMPASS_API_KEY="your-compass-api-key"
+# Gemini 图片生成（migoo 优先）
+export MIGOO_API_KEY="your-migoo-api-key"
 export YUNWU_API_KEY="your-yunwu-api-key"  # 备用
 ```
 
 **注意**：
-- **视频生成 Provider**：Seedance（piapi）、Kling（official/fal）、Veo3（compass）
-- **图片生成 Provider 优先级**：compass → yunwu
+- **视频生成 Provider**：Seedance（piapi）、Kling（official/fal）、Veo3（migoo）
+- **图片生成 Provider 优先级**：migoo → yunwu
 
 ## 🔄 工作流程
 
@@ -252,8 +252,8 @@ export YUNWU_API_KEY="your-yunwu-api-key"  # 备用
 
 #### 废弃清理
 - 🗑️ **移除 yunwu 视频生成 Provider** — Vidu/Kling/Kling-Omni 的 yunwu provider 全部废弃，yunwu 仅保留 Gemini 图片生成
-- 🗑️ **移除 FalImageClient** — 图片生成仅保留 compass/yunwu 两个 provider
-- 🗑️ **废弃火山引擎 TTS** — TTS 仅保留 Gemini TTS（通过 Compass API）
+- 🗑️ **移除 FalImageClient** — 图片生成仅保留 migoo/yunwu 两个 provider
+- 🗑️ **废弃火山引擎 TTS** — TTS 仅保留 Gemini TTS（通过 Migoo LLM API）
 - 🗑️ **移除 Vidu 后端** — 不再支持 Vidu 视频生成
 
 #### Seedance 2 升级
@@ -264,7 +264,7 @@ export YUNWU_API_KEY="your-yunwu-api-key"  # 备用
 - ✨ **首尾帧控制** — `mode: first_last_frames` 支持首尾帧精确控制
 
 #### 架构优化
-- 🔄 **Provider 矩阵简化** — 视频 4 后端（Seedance/Kling/Kling-Omni/Veo3），图片 2 provider（compass/yunwu）
+- 🔄 **Provider 矩阵简化** — 视频 4 后端（Seedance/Kling/Kling-Omni/Veo3），图片 2 provider（migoo/yunwu）
 - 🔄 **TTS 统一为 Gemini** — 移除火山引擎 TTS 调用路径
 - 📝 **文档全面更新** — SKILL.md、backend-guide.md、api-reference.md 同步更新
 
@@ -274,16 +274,16 @@ export YUNWU_API_KEY="your-yunwu-api-key"  # 备用
 | 视频 | Seedance 2 | piapi |
 | 视频 | Kling v3 | official / fal |
 | 视频 | Kling v3 Omni | official / fal |
-| 视频 | Veo3 | compass |
-| 图片 | Gemini 3.1 Flash Image | compass / yunwu |
-| TTS | Gemini TTS | compass |
+| 视频 | Veo3 | migoo |
+| 图片 | Gemini 3.1 Flash Image | migoo / yunwu |
+| TTS | Gemini TTS | migoo |
 | 音乐 | Suno V3.5 | official |
 
 ### v1.5.1 (2026-04-03)
 🎤 **Gemini TTS 集成**
 
 #### 新增功能
-- ✨ **GeminiTTSClient** — 新增 Gemini TTS 客户端（通过 Compass API）
+- ✨ **GeminiTTSClient** — 新增 Gemini TTS 客户端（通过 Migoo LLM API）
   - 优先级高于火山引擎 TTS
   - 支持风格提示（prompt 参数）
   - 支持 inline 情感标注：`[brightly]`, `[sigh]`, `[pause]`
@@ -299,7 +299,7 @@ export YUNWU_API_KEY="your-yunwu-api-key"  # 备用
 | `male_warm` | Orus | 男声（稳重）|
 
 #### TTS 优先级
-- **Gemini TTS**（COMPASS_API_KEY）→ 火山引擎 TTS（VOLCENGINE_TTS_*）
+- **Gemini TTS**（MIGOO_API_KEY）→ 火山引擎 TTS（VOLCENGINE_TTS_*）
 
 ### v1.5.0 (2026-04-03)
 🎬 **Seedance 智能切镜 + fal 图片生成**

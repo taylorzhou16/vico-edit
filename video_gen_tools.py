@@ -200,13 +200,13 @@ class Config:
 
     GEMINI_IMAGE_URL: str = "https://yunwu.ai/v1beta/models/gemini-3.1-flash-image-preview:generateContent"
 
-    # Compass API
+    # Migoo LLM API
     @property
-    def COMPASS_API_KEY(self) -> str:
-        return self.get("COMPASS_API_KEY", "")
+    def MIGOO_API_KEY(self) -> str:
+        return self.get("MIGOO_API_KEY", "")
 
-    COMPASS_IMAGE_URL: str = "https://compass.llm.shopee.io/compass-api/v1/publishers/google/models/gemini-3.1-flash-image-preview:generateContent"
-    COMPASS_VIDEO_URL: str = "https://compass.llm.shopee.io/compass-api/v1/publishers/google/models/veo-3.1-generate-001"
+    MIGOO_IMAGE_URL: str = "https://inner-api.us.migoo.shopee.io/inbeeai/compass-api/v1/publishers/google/models/gemini-3.1-flash-image-preview:generateContent"
+    MIGOO_VIDEO_URL: str = "https://inner-api.us.migoo.shopee.io/inbeeai/compass-api/v1/publishers/google/models/veo-3.1-generate-001"
 
     # Kling API
     @property
@@ -290,7 +290,7 @@ BACKEND_PROVIDER_KEYS = {
     "seedance": ["FAL_API_KEY", "SEEDANCE_API_KEY"],  # fal优先
     "kling": ["KLING_ACCESS_KEY", "FAL_API_KEY"],
     "kling-omni": ["KLING_ACCESS_KEY", "FAL_API_KEY"],
-    # veo3 已废弃，COMPASS_API_KEY 仅用于 Gemini 图片/TTS
+    # veo3 已废弃，MIGOO_API_KEY 仅用于 Gemini 图片/TTS
 }
 
 
@@ -2567,7 +2567,7 @@ class FalSeedanceClient:
 
 class Veo3Client:
     """
-    Google Veo3 视频生成客户端（通过 Compass 代理）
+    Google Veo3 视频生成客户端（通过 Migoo LLM PROXY）
 
     .. deprecated::
         Veo3 后端已废弃，不再支持。请使用 Kling、Kling-Omni 或 Seedance。
@@ -2583,8 +2583,8 @@ class Veo3Client:
         )
         import httpx
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0))
-        self.api_key = Config.COMPASS_API_KEY
-        self.base_url = Config.COMPASS_VIDEO_URL
+        self.api_key = Config.MIGOO_API_KEY
+        self.base_url = Config.MIGOO_VIDEO_URL
 
     async def close(self):
         await self.client.aclose()
@@ -2892,7 +2892,7 @@ class TTSClient:
     火山引擎 TTS 客户端
 
     .. deprecated::
-        火山引擎 TTS 已废弃，不再支持。请使用 Gemini TTS（需要 COMPASS_API_KEY）。
+        火山引擎 TTS 已废弃，不再支持。请使用 Gemini TTS（需要 MIGOO_API_KEY）。
         此类保留仅为向后兼容，将在未来版本中删除。
     """
 
@@ -2996,10 +2996,10 @@ class TTSClient:
             return {"success": False, "error": str(e)}
 
 
-# ============== Gemini TTS（通过 Compass API）==============
+# ============== Gemini TTS（通过 Migoo LLM API）==============
 
 class GeminiTTSClient:
-    """Gemini TTS 客户端（通过 Compass API）"""
+    """Gemini TTS 客户端（通过 Migoo LLM API）"""
 
     # Gemini TTS 音色
     VOICE_TYPES = {
@@ -3039,11 +3039,11 @@ class GeminiTTSClient:
         from google.cloud import texttospeech
         from google.api_core import client_options
 
-        if not Config.COMPASS_API_KEY:
+        if not Config.MIGOO_API_KEY:
             return {
                 "success": False,
-                "error": "COMPASS_API_KEY 未配置",
-                "hint": "请在 config.json 中添加 COMPASS_API_KEY"
+                "error": "MIGOO_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 MIGOO_API_KEY"
             }
 
         # 中文旁白自动添加语速指令
@@ -3063,8 +3063,8 @@ class GeminiTTSClient:
             # 创建客户端
             client = texttospeech.TextToSpeechClient(
                 client_options=client_options.ClientOptions(
-                    api_endpoint="https://compass.llm.shopee.io/compass-api/v1",
-                    api_key=Config.COMPASS_API_KEY,
+                    api_endpoint="https://inner-api.us.migoo.shopee.io/inbeeai/compass-api/v1",
+                    api_key=Config.MIGOO_API_KEY,
                 ),
                 transport="rest",
             )
@@ -3664,13 +3664,13 @@ class FalImageClient:
     Gemini 图片生成客户端（通过 fal.ai API）
 
     .. deprecated::
-        Fal Image 已废弃，不再支持。请使用 CompassImageClient（需要 COMPASS_API_KEY）。
+        Fal Image 已废弃，不再支持。请使用 MigooImageClient（需要 MIGOO_API_KEY）。
     """
 
     def __init__(self):
         import warnings
         warnings.warn(
-            "FalImageClient 已废弃，请使用 CompassImageClient",
+            "FalImageClient 已废弃，请使用 MigooImageClient",
             DeprecationWarning,
             stacklevel=2
         )
@@ -3773,8 +3773,8 @@ class FalImageClient:
             return {"success": False, "error": str(e)}
 
 
-class CompassImageClient:
-    """Gemini 图片生成客户端（通过 Compass API）"""
+class MigooImageClient:
+    """Gemini 图片生成客户端（通过 Migoo LLM API）"""
 
     STYLE_PRESETS = {
         "cinematic": "cinematic style, film grain, dramatic lighting, movie still",
@@ -3832,16 +3832,16 @@ class CompassImageClient:
         }
 
         ref_info = f" (with {len(reference_images)} reference images)" if reference_images else ""
-        logger.info(f"📤 图片生成（compass{ref_info}）: {prompt[:30]}...")
+        logger.info(f"📤 图片生成（migoo{ref_info}）: {prompt[:30]}...")
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
-                    Config.COMPASS_IMAGE_URL,
+                    Config.MIGOO_IMAGE_URL,
                     json=payload,
                     headers={
                         "Content-Type": "application/json",
-                        "Authorization": f"Bearer {Config.COMPASS_API_KEY}",
+                        "Authorization": f"Bearer {Config.MIGOO_API_KEY}",
                     }
                 )
                 response.raise_for_status()
@@ -4360,7 +4360,7 @@ async def cmd_video(args):
             else:
                 provider = 'fal'  # 默认，会报错提示配置
         elif backend == 'veo3':
-            provider = 'compass'  # veo3 只有 compass provider
+            provider = 'migoo'  # veo3 只有 migoo provider
         elif Config.KLING_ACCESS_KEY and Config.KLING_SECRET_KEY:
             provider = 'official'  # 优先使用官方 API
         elif Config.FAL_API_KEY:
@@ -4732,12 +4732,12 @@ async def cmd_video(args):
     elif backend == 'veo3':
         # Veo3 已废弃，但仍保留代码向后兼容
         logger.warning("⚠️ Veo3 后端已废弃，建议使用 Kling、Kling-Omni 或 Seedance")
-        if not Config.COMPASS_API_KEY:
+        if not Config.MIGOO_API_KEY:
             print(json.dumps({
                 "success": False,
-                "error": "COMPASS_API_KEY 未配置",
-                "hint": "请在 config.json 中添加 COMPASS_API_KEY",
-                "get_key": "Compass API key 用于访问 Veo3 视频生成"
+                "error": "MIGOO_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 MIGOO_API_KEY",
+                "get_key": "Migoo LLM API key 用于访问 Veo3 视频生成"
             }, indent=2, ensure_ascii=False))
             return 1
 
@@ -4879,16 +4879,16 @@ async def cmd_tts(args):
 
     # Gemini TTS（兜底）
     if backend == "gemini":
-        if not Config.COMPASS_API_KEY:
+        if not Config.MIGOO_API_KEY:
             print(json.dumps({
                 "success": False,
-                "error": "COMPASS_API_KEY 未配置",
-                "hint": "请配置 COMPASS_API_KEY 以使用 Gemini TTS",
-                "get_key": "访问 compass.llm.shopee.io 获取 API key"
+                "error": "MIGOO_API_KEY 未配置",
+                "hint": "请配置 MIGOO_API_KEY 以使用 Gemini TTS",
+                "get_key": "访问 Migoo LLM PROXY 获取 API key（联系 dongming.shen）"
             }, indent=2, ensure_ascii=False))
             return 1
 
-        logger.info("🔧 使用 Gemini TTS (Compass) - 兜底模式")
+        logger.info("🔧 使用 Gemini TTS (Migoo LLM) - 兜底模式")
         client = GeminiTTSClient()
         result = await client.synthesize(
             text=args.text,
@@ -4915,13 +4915,13 @@ async def cmd_image(args):
     # Provider 自动选择逻辑
     provider = getattr(args, 'provider', None)
     if provider is None:
-        # 优先级：compass → yunwu
-        if Config.COMPASS_API_KEY:
-            provider = 'compass'
+        # 优先级：migoo → yunwu
+        if Config.MIGOO_API_KEY:
+            provider = 'migoo'
         elif Config.GEMINI_API_KEY:  # GEMINI_API_KEY 实际上是 YUNWU_API_KEY
             provider = 'yunwu'
         else:
-            provider = 'compass'  # 默认，会报错提示配置
+            provider = 'migoo'  # 默认，会报错提示配置
 
     logger.info(f"🔧 使用 provider: {provider}")
 
@@ -4935,17 +4935,17 @@ async def cmd_image(args):
         aspect_ratio = "9:16"  # 最终默认值
         logger.info(f"📐 使用默认宽高比: {aspect_ratio}")
 
-    # compass provider
-    if provider == 'compass':
-        if not Config.COMPASS_API_KEY:
+    # migoo provider
+    if provider == 'migoo':
+        if not Config.MIGOO_API_KEY:
             print(json.dumps({
                 "success": False,
-                "error": "COMPASS_API_KEY 未配置",
-                "hint": "请在 config.json 中添加 COMPASS_API_KEY"
+                "error": "MIGOO_API_KEY 未配置",
+                "hint": "请在 config.json 中添加 MIGOO_API_KEY"
             }, indent=2, ensure_ascii=False))
             return 1
 
-        client = CompassImageClient()
+        client = MigooImageClient()
         result = await client.generate(
             prompt=args.prompt,
             output=args.output,
@@ -5013,11 +5013,11 @@ async def cmd_setup(args):
             ]
         },
         "4": {
-            "name": "Veo3 via Compass（Google Veo3，全局兜底模型）",
+            "name": "Veo3 via Migoo（Google Veo3，全局兜底模型）",
             "backend": "veo3",
-            "provider": "compass",
+            "provider": "migoo",
             "keys": [
-                {"key": "COMPASS_API_KEY", "label": "Compass API Key", "url": "https://compass.llm.shopee.io"}
+                {"key": "MIGOO_API_KEY", "label": "Migoo LLM API Key", "url": "https://inner-api.us.migoo.shopee.io/inbeeai"}
             ]
         },
     }
@@ -5062,7 +5062,7 @@ async def cmd_setup(args):
     # 显示当前已配置的 keys
     for key in ["SEEDANCE_API_KEY", "KLING_ACCESS_KEY", "KLING_SECRET_KEY", "FAL_API_KEY",
                 "YUNWU_API_KEY", "SUNO_API_KEY", "VOLCENGINE_TTS_APP_ID",
-                "VOLCENGINE_TTS_ACCESS_TOKEN", "COMPASS_API_KEY"]:
+                "VOLCENGINE_TTS_ACCESS_TOKEN", "MIGOO_API_KEY"]:
         val = config.get(key) or os.getenv(key, "")
         setup_info["current_config"][key] = f"{val[:4]}***" if val else "未设置"
 
@@ -5144,10 +5144,10 @@ async def cmd_check(args):
             "purpose": "Seedance 视频生成（piapi.ai 代理）",
             "get_key": "https://piapi.ai"
         },
-        "COMPASS_API_KEY": {
-            "value": Config.COMPASS_API_KEY,
-            "purpose": "Veo3 视频 + Gemini 图片 + Gemini TTS（Compass 代理）",
-            "get_key": "https://compass.llm.shopee.io"
+        "MIGOO_API_KEY": {
+            "value": Config.MIGOO_API_KEY,
+            "purpose": "Gemini 图片 + Gemini TTS（Migoo LLM PROXY）",
+            "get_key": "https://inner-api.us.migoo.shopee.io/inbeeai"
         },
         "YUNWU_API_KEY": {
             "value": Config.YUNWU_API_KEY,
@@ -5189,7 +5189,7 @@ async def cmd_check(args):
     # 检查是否至少有一个视频 provider 可用
     has_video_provider = any([
         Config.SEEDANCE_API_KEY,
-        Config.COMPASS_API_KEY,
+        Config.MIGOO_API_KEY,
         Config.KLING_ACCESS_KEY and Config.KLING_SECRET_KEY,
         Config.FAL_API_KEY,
     ])
@@ -5247,8 +5247,8 @@ def main():
     video_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径，自动读取 aspect_ratio")
     video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
-    video_parser.add_argument("--provider", choices=["official", "fal", "piapi", "compass"], default=None,
-                              help="API provider (默认自动选择; seedance: fal > piapi; veo3 仅支持 compass)")
+    video_parser.add_argument("--provider", choices=["official", "fal", "piapi", "migoo"], default=None,
+                              help="API provider (默认自动选择; seedance: fal > piapi; veo3 仅支持 migoo)")
     video_parser.add_argument("--backend", "-b", choices=["kling", "kling-omni", "seedance"], default="kling",
                               help="视频生成后端 (默认 kling; kling-omni 用于参考图; seedance 用于智能切镜; veo3 用于全局兜底)")
     video_parser.add_argument("--mode", "-m", choices=["std", "pro", "text_to_video", "first_last_frames", "omni_reference"], default="std",
@@ -5317,8 +5317,8 @@ def main():
     image_parser.add_argument("--aspect-ratio", "-a", default=None, help="宽高比")
     image_parser.add_argument("--storyboard", help="storyboard.json 路径，自动读取 aspect_ratio")
     image_parser.add_argument("--reference", "-r", nargs="+", help="参考图路径（支持多个，重要人物放后面）")
-    image_parser.add_argument("--provider", choices=["compass", "yunwu"], default=None,
-                              help="API provider (默认自动选择: compass 优先)")
+    image_parser.add_argument("--provider", choices=["migoo", "yunwu"], default=None,
+                              help="API provider (默认自动选择: migoo 优先)")
 
     # vision 子命令（内置多模态分析）
     vision_parser = subparsers.add_parser("vision", help="分析图片内容")
