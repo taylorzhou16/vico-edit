@@ -723,9 +723,17 @@ storyboard["character_image_mapping"] = image_mapping
 
 **旁白分段规范**：See [reference/storyboard-spec.md](reference/storyboard-spec.md) → 「旁白分段规划」
 
-### Step 4: 展示给用户确认（强制步骤）
+### Step 4: 一致性 Review（自动执行）
+
+**必须执行**：Phase 3 分镜生成后，**用户确认前**自动执行一致性 Review。
+
+详见 **Phase 3.5** 部分。
+
+### Step 5: 展示给用户确认（强制步骤）
 
 **必须在用户明确确认后才能进入 Phase 4！**
+
+展示的是**经过一致性 Review 修复后**的分镜方案。
 
 展示每个镜头的：
 - 场景信息
@@ -752,7 +760,9 @@ storyboard["character_image_mapping"] = image_mapping
 
 ## Phase 3.5: 一致性 Review（模型驱动）
 
-**位置**：Phase 3 分镜设计完成后，Phase 4 执行前
+**位置**：Phase 3 分镜设计完成后，**用户确认之前**
+
+**触发**：自动执行（无需手动触发）
 
 **原则**：模型语义审查 → 自动修复 → 通知用户（无需用户确认）
 
