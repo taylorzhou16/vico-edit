@@ -727,61 +727,20 @@ storyboard["character_image_mapping"] = image_mapping
 
 **必须执行**：Phase 3 分镜生成后，**用户确认前**自动执行一致性 Review。
 
-详见 **Phase 3.5** 部分。
-
-### Step 5: 展示给用户确认（强制步骤）
-
-**必须在用户明确确认后才能进入 Phase 4！**
-
-展示的是**经过一致性 Review 修复后**的分镜方案。
-
-展示每个镜头的：
-- 场景信息
-- 生成模式（text2video/img2video/omni-video）
-- 后端选择
-- video_prompt
-- image_prompt（如有）
-- reference_images（如有）
-- 台词
-- 转场
-- 时长
-
-**若有旁白，额外展示**：
-- narration_segments 分段列表
-- 每段的时间点、文案
-
-提供选项：确认并执行 / 修改分镜 / 调整旁白 / 调整时长 / 更换转场 / 取消
-
-### Phase 3 产出
-
-- `storyboard/storyboard.json` — 分镜脚本（包含 generation_mode、reference_images、后端选择、narration_segments）
-
----
-
-## Phase 3.5: 一致性 Review（模型驱动）
-
-**位置**：Phase 3 分镜设计完成后，**用户确认之前**
-
-**触发**：自动执行（无需手动触发）
-
-**原则**：模型语义审查 → 自动修复 → 通知用户（无需用户确认）
-
-### 核心理念
+#### 核心理念
 
 一致性问题需要**语义理解**，不是关键词匹配：
 - "垂杨柳" → "枝条下垂的柳树" → "老树" 这种渐进漂移，关键词检测抓不到
 - 模型能理解"黄昏"与"春日下午"的时间语义冲突
 - 模型能判断"古树"是否在语义上偏离了"垂杨柳"
 
-### Review 前必须阅读
-
-**执行一致性 Review 前，必须阅读以下规范**：
+#### Review 前必须阅读
 
 ```
 Read: reference/consistency-guide.md   # 一致性原则详细规范
 ```
 
-### 审查原则概览
+#### 审查原则概览
 
 | 原则 | 检测范围 | 核心要求 |
 |------|---------|---------|
@@ -791,13 +750,11 @@ Read: reference/consistency-guide.md   # 一致性原则详细规范
 | **image/video 匹配** | 同一 shot 内 | 两个 prompt 对关键元素描述必须一致 |
 | **跨 scene 连续性** | 连续的 scenes | 关键资产应保持视觉连续 |
 
-### Review 执行流程
+#### 执行流程
 
-**Step 1：读取 storyboard.json**
+**1. 读取 storyboard.json**
 
-**Step 2：构建 Review Prompt**
-
-使用以下 prompt 结构进行语义审查：
+**2. 构建 Review Prompt**（使用以下结构）：
 
 ```
 你是一致性审查员，负责检查 storyboard.json 的跨镜头一致性。
@@ -841,19 +798,19 @@ Read: reference/consistency-guide.md   # 一致性原则详细规范
 {storyboard.json 内容}
 ```
 
-**Step 3：模型分析**
+**3. 模型分析**
 
 模型分析所有 shots，输出问题列表和修复建议。
 
-**Step 4：自动应用修复**
+**4. 自动应用修复**
 
 根据模型输出的修复建议，直接修改 storyboard.json 中对应的字段。
 
-**Step 5：保存并通知**
+**5. 保存并通知**
 
 保存修复后的 storyboard.json，向用户输出审查结果。
 
-### Review 输出格式
+#### 输出格式
 
 ```
 📋 一致性审查结果
@@ -883,11 +840,39 @@ Read: reference/consistency-guide.md   # 一致性原则详细规范
 共发现 N 个一致性问题，已自动修复 storyboard.json
 ```
 
-### 无需用户确认
+#### 无需用户确认
 
 发现明显不一致问题时直接修复，修复后通知用户即可。用户如需调整可手动修改 storyboard.json。
 
+### Step 5: 展示给用户确认（强制步骤）
+
+**必须在用户明确确认后才能进入 Phase 4！**
+
+展示的是**经过一致性 Review 修复后**的分镜方案。
+
+展示每个镜头的：
+- 场景信息
+- 生成模式（text2video/img2video/omni-video）
+- 后端选择
+- video_prompt
+- image_prompt（如有）
+- reference_images（如有）
+- 台词
+- 转场
+- 时长
+
+**若有旁白，额外展示**：
+- narration_segments 分段列表
+- 每段的时间点、文案
+
+提供选项：确认并执行 / 修改分镜 / 调整旁白 / 调整时长 / 更换转场 / 取消
+
+### Phase 3 产出
+
+- `storyboard/storyboard.json` — 分镜脚本（包含 generation_mode、reference_images、后端选择、narration_segments）
+
 ---
+
 
 ## Phase 4: 执行生成
 
