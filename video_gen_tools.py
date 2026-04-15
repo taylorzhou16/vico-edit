@@ -5012,14 +5012,7 @@ async def cmd_setup(args):
                 {"key": "FAL_API_KEY", "label": "fal.ai API Key", "url": "https://fal.ai"}
             ]
         },
-        "4": {
-            "name": "Veo3 via Migoo（Google Veo3，全局兜底模型）",
-            "backend": "veo3",
-            "provider": "migoo",
-            "keys": [
-                {"key": "MIGOO_API_KEY", "label": "Migoo LLM API Key", "url": "https://inner-api.us.migoo.shopee.io/inbeeai"}
-            ]
-        },
+        # "4": Veo3 已废弃 - 从 setup 选项中移除
     }
 
     OPTIONAL_SERVICES = {
