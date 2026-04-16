@@ -354,34 +354,40 @@ python video_gen_tools.py tts \
   --output generated/narration/narr_1.mp3
 ```
 
-**voice 参数（火山引擎 TTS 音色）**：
+**TTS 后端优先级**：ElevenLabs TTS > Gemini TTS
 
-| 参数值 | 音色说明 | 火山引擎 ID |
-|-------|---------|------------|
-| `female_narrator` | 女声旁白，专业沉稳 | BV700_streaming |
-| `female_gentle` | 女声温柔，柔和亲切 | BV034_streaming |
-| `male_narrator` | 男声旁白，专业沉稳 | BV701_streaming |
-| `male_warm` | 男声温暖，磁性亲切 | BV033_streaming |
+**voice 参数映射**：
 
-**emotion 参数（可选）**：
+| 参数值 | ElevenLabs 音色 | Gemini 音色（兜底） |
+|-------|----------------|-------------------|
+| `female_narrator` | 创建新声音（专业女声） | Kore |
+| `female_gentle` | 内置 Alice（温柔） | Aoede |
+| `female_bright` | 内置 Charlotte（明亮） | Leda |
+| `male_narrator` | 内置 George（专业男声） | Charon |
+| `male_warm` | 内置 Adam（温暖） | Orus |
 
-| 参数值 | 情感风格 |
-|-------|---------|
-| `neutral` | 中性（默认） |
-| `happy` | 开心 |
-| `sad` | 悲伤 |
-| `gentle` | 温柔 |
-| `serious` | 严肃 |
+**stability 参数（仅 ElevenLabs）**：
+
+| 视频类型 | Stability | 说明 |
+|---------|-----------|------|
+| cinematic | 0.22 | 戏剧角色，高表现力 |
+| vlog | 0.28 | 情感叙事，平衡稳定 |
+| documentary | 0.35 | 专业解说，稳定输出 |
+| commercial | 0.30 | 广告片，稳定但灵活 |
+
+**文本增强**（ElevenLabs 自动执行）：自动插入情感/节奏/生理标签，不改写原文用词。
+
+**降级机制**：ElevenLabs 失败时自动降级到 Gemini TTS。
 
 **narration_config.voice_style 映射规则**：
 
 用户在 Phase 2 指定的 voice_style（如"温柔女声"）会在 Phase 3 映射到具体的 TTS 参数：
-- "温柔女声" → `voice: female_gentle, emotion: gentle`
-- "专业女声旁白" → `voice: female_narrator, emotion: neutral`
-- "磁性男声" → `voice: male_warm, emotion: neutral`
-- "严肃男声" → `voice: male_narrator, emotion: serious`
+- "温柔女声" → `voice: female_gentle`
+- "专业女声旁白" → `voice: female_narrator`
+- "磁性男声" → `voice: male_warm`
+- "严肃男声" → `voice: male_narrator`
 
-**重要**：一条视频内使用同一套 voice + emotion 参数，保证旁白风格统一。
+**重要**：一条视频内使用同一套 voice 参数，保证旁白风格统一。同一项目内复用 `voice-id` 可跳过 Design/Create 步骤，更快。
 
 ### BGM 约束
 

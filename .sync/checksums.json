@@ -1,12 +1,12 @@
 {
-  "SKILL.md": "c0df58954c4b5041931dd29acf0e1db34736fbe60eeca5fd8bf981d9770a0388",
-  "README.md": "fafb6970653d6ba1582bf41b902a49ecaab91f1d730c1a0a06b86bc19cc1208d",
-  "reference/storyboard-spec.md": "7d32aebceb83174aefd6048792ff790ea3ed1be88e85237a78d15f0c8b244ee7",
-  "reference/backend-guide.md": "cf66f353c0c449373d6fb500bf96c85ee667074491d9ab545a3121a588d56726",
-  "reference/prompt-guide.md": "5f102563c5e970d4eb09cf196656c022e2cc4844215d083284a9733390860b31",
-  "reference/api-reference.md": "b90bff8bb095811a5b7fd8b62647a1a45325e1319c56a5dff05097695a8e270f",
-  "video_gen_tools.py": "fe9771746af4cfe38e1166b7d81c7ad53cb27b2ad56cf3cc9507ab776ba0c361",
-  "video_gen_editor.py": "0e1a37be4cdf63f7b53de870b818f4dc19ebf667d7c5b95f67629136fb6eaceb",
-  "config.json.example": "6f1033a79aea2e06c2c3f795a158b220d090ff87376b876062683bd36b26860c",
+  "SKILL.md": "55b36c52ab73bf7673060a4d477299a4444748c5dbe96fb2919763e7a984a082",
+  "README.md": "d796f7c15f193d84e9f587bdc44136a7bafff78ad98ec120b3df937f3e304370",
+  "reference/storyboard-spec.md": "26dd9bbcac9507a2b49f2f10638a65ef42095b91d278890a7f64d8cee237f32b",
+  "reference/backend-guide.md": "8e0e093097ea4e341b78817139ada4a55b8b1fbdb71f6c7add092dcf2b6125e6",
+  "reference/prompt-guide.md": "c1cdb5e4cd9651364a4905c9ff74207806315f61a82b0c6eb4a260b359a8adc0",
+  "reference/api-reference.md": "1701136b48e246ba5d8bea090032084bd58e1157a63ebaf8255fe19ab27e32d1",
+  "video_gen_tools.py": "f0100e641ad659f3431b7211665ff4816483e0da03271c3178579c3e116654e0",
+  "video_gen_editor.py": "4fa2a8e21850f42346a30ffd63a22cf8e7d61d0fd3c2e7675e7061104376f911",
+  "config.json.example": "b7cff2ef47560c27c1bd90ac609783b150beccd06b3baf9ebb957bca66c31bf3",
   "requirements.txt": "bff057979879bf8d16acdc64317c6f2ac3dba4f1c4cd8df5ccd2a592fa804c95"
 }
