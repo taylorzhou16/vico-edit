@@ -27,6 +27,7 @@ argument-hint: <素材目录或视频文件>
 | `seedance` | **fal > piapi** | fal 优先，piapi 为兜底 |
 | `kling-omni` | official, fal | 官方 API 遇限制时可切换 |
 | `kling` | official, fal | 官方 API 遇限制时可切换 |
+| `veo3` | ~~deprecated~~ | **已废弃** — 不再支持，请使用 Kling/Kling-Omni/Seedance |
 
 当 Kling 官方 API 遇到并发限制（429）时，可使用 `--provider fal`：
 
@@ -61,10 +62,13 @@ python video_gen_tools.py video --provider fal --backend kling-omni --image-list
 | **MV短片** | **有真人** | **Kling-Omni** | — | 真人素材禁用 Seedance |
 | **Vlog/写实类** | 有 | Kling-3.0 | — | 首帧精确控制，不走 Seedance |
 
+**Veo3 已废弃**：Veo3 后端已废弃，不再支持。请使用 Kling、Kling-Omni 或 Seedance。Veo3 时长固定（4/6/8s），最高 720p 分辨率。
+
 **关键规则**：
 - **Seedance 优先用于虚构内容**（智能切镜是核心优势）
 - **Kling-Omni 作为 Seedance 失败时的降级备选**
 - **有真实素材时用 Kling**（首帧精确控制）
+- **同一项目使用同一模型**，不混用（mixed 模式除外）
 
 | visual_style | 用户照片处理 | 说明 |
 |--------------|-------------|------|
@@ -82,12 +86,6 @@ python video_gen_tools.py video --provider fal --backend kling-omni --image-list
   ├── 选择最佳视角作为角色参考图 →
   └── 注册到 personas.json
 ```
-
-**关键规则**：
-- **Seedance 优先用于虚构内容**（智能切镜是核心优势）
-- **Kling-Omni 作为 Seedance 失败时的降级备选**
-- **有真实素材时用 Kling/Vidu**（首帧精确控制）
-- **同一项目使用同一模型**，不混用（mixed 模式除外）
 
 详细后端对比和降级策略：See [reference/backend-guide.md](reference/backend-guide.md)
 
@@ -140,6 +138,8 @@ python video_gen_tools.py setup
 >
 > **3. Kling via fal.ai** — 绕过官方并发限制
 >    - 需要：fal.ai API Key（from fal.ai）
+>
+> **~~4. Veo3~~（已废弃）** — 不再支持，请使用 Kling/Kling-Omni/Seedance
 
 用户选择后，要求提供对应的 API key，然后保存：
 
@@ -715,8 +715,8 @@ storyboard["character_image_mapping"] = image_mapping
     "voice_style": "温柔女声"
   },
   "narration_segments": [
-    {"segment_id": "narr_1", "overall_time_range": "0-3s", "text": "这是一个宁静的下午..."},
-    {"segment_id": "narr_2", "overall_time_range": "8-11s", "text": "她坐在窗边..."}
+    {"segment_id": "narr_1", "time_range": "0-3s", "text": "这是一个宁静的下午..."},
+    {"segment_id": "narr_2", "time_range": "8-11s", "text": "她坐在窗边..."}
   ]
 }
 ```
@@ -914,6 +914,7 @@ python video_gen_tools.py validate --storyboard storyboard/storyboard.json
 | **Seedance** | scene-level 分镜图（scene_1_frame.png），无 shot-level 分镜 | 无特殊要求 |
 | **Kling-Omni** | **每个 shot 有 image_prompt 和 frame_path** | 缺少 shot-level 分镜结构 |
 | **Kling img2video** | 每个 shot 有 frame_path，frame_strategy = first_frame_only | 缺少首帧图 |
+| **~~Veo3~~** | ~~deprecated~~ | 请使用 Kling/Kling-Omni/Seedance |
 
 **Kling-Omni 链路一致性检查**：
 
@@ -1303,6 +1304,8 @@ python video_gen_tools.py video \
   --image-list frame.png ref.jpg \
   --duration 10 \
   --output output.mp4
+
+# ~~Veo3~~（已废弃 - 请使用 Kling/Kling-Omni/Seedance）
 
 # 音乐（必须传 --creative，从 creative.json 读取 prompt 和 style）
 python video_gen_tools.py music --creative creative/creative.json --output <输出>
