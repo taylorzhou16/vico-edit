@@ -4466,7 +4466,7 @@ async def cmd_video(args):
         # ===== Kling / Kling-Omni backend (fal provider) =====
         client = FalKlingClient()
         try:
-            generate_audio = args.audio if hasattr(args, 'audio') else False
+            generate_audio = args.audio
             duration = max(3, min(15, args.duration))
 
             result = await client.create_video(
@@ -5248,7 +5248,8 @@ def main():
     video_parser.add_argument("--resolution", "-r", default="720p", help="分辨率")
     video_parser.add_argument("--aspect-ratio", "-a", default=None, help="宽高比（如 16:9, 9:16）")
     video_parser.add_argument("--storyboard", "-s", help="storyboard.json 路径，自动读取 aspect_ratio")
-    video_parser.add_argument("--audio", action="store_true", help="生成原生音频")
+    video_parser.add_argument("--audio", default=True, action="store_true", help="生成原生音频（默认开启）")
+    video_parser.add_argument("--no-audio", dest="audio", action="store_false", help="禁用原生音频生成")
     video_parser.add_argument("--output", "-o", help="输出文件路径")
     video_parser.add_argument("--provider", choices=["official", "fal", "piapi", "migoo"], default=None,
                               help="API provider (默认自动选择; seedance: fal > piapi; veo3 仅支持 migoo)")

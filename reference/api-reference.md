@@ -70,7 +70,7 @@ python ~/.claude/skills/video-gen/video_gen_tools.py vision <目录路径> --bat
 | `--multi-shot` | kling, kling-omni | 启用多镜头模式 |
 | `--shot-type` | kling, kling-omni | `intelligence`（AI自动）或 `customize`（自定义） |
 | `--multi-prompt` | kling, kling-omni | 自定义分镜列表（JSON格式） |
-| `--audio` | kling, kling-omni | 启用音画同出 |
+| `--audio` | kling, kling-omni | 音画同出（默认开启，用 `--no-audio` 关闭） |
 | `--mode` | kling, kling-omni | `std`（标准）或 `pro`（高质量） |
 
 ### Seedance 2 参数说明
